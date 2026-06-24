@@ -1,0 +1,330 @@
+/* ─────────────────────────────────────────────
+   Work page
+   ───────────────────────────────────────────── */
+
+#work {
+  background: var(--bg);
+  padding-top: var(--nav-h);
+  min-height: 100vh;
+}
+
+/* ─────────────────────────────────────────────
+   Work header — 2-column
+   ───────────────────────────────────────────── */
+
+.work-header {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: var(--sp-3xl) var(--sp-lg) var(--sp-2xl);
+  border-bottom: 0.5px solid var(--border);
+}
+
+.work-header-title {
+  font-family: var(--font-sans);
+  font-size: clamp(36px, 6vw, 80px);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 0.92;
+  color: var(--tx);
+}
+
+.work-header-right {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding-left: var(--sp-lg);
+}
+
+.work-header-desc {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 300;
+  line-height: 1.75;
+  color: var(--tx2);
+  max-width: 400px;
+  margin-bottom: var(--sp-lg);
+}
+
+.work-header-meta {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+
+/* ─────────────────────────────────────────────
+   Work entries — major (3-column grid)
+   ───────────────────────────────────────────── */
+
+.work-entries {
+  padding: 0 var(--sp-lg);
+}
+
+.work-entry {
+  display: grid;
+  grid-template-columns: 80px 1fr 1fr;
+  border-bottom: 0.5px solid var(--border);
+  padding: var(--sp-2xl) 0;
+  transition: background 0.2s ease;
+  cursor: pointer;
+}
+
+.work-entry:hover {
+  background: rgba(200, 212, 78, 0.025);
+}
+
+.we-index {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  color: var(--tx3);
+  padding-top: 4px;
+}
+
+.we-left {
+  padding-right: var(--sp-lg);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.we-type-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-xs);
+  margin-bottom: var(--sp-md);
+}
+
+.we-type-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--acc);
+  flex-shrink: 0;
+}
+
+.we-type-label {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+
+.we-title {
+  font-family: var(--font-sans);
+  font-size: clamp(20px, 2.8vw, 34px);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.05;
+  color: var(--tx);
+  margin-bottom: var(--sp-sm);
+}
+
+.we-desc {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 300;
+  line-height: 1.75;
+  color: var(--tx2);
+  margin-bottom: var(--sp-lg);
+}
+
+.we-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-xs);
+  margin-bottom: var(--sp-lg);
+}
+
+.we-tag {
+  font-family: var(--font-mono);
+  font-size: 7px;
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--tx3);
+  padding: 3px 8px;
+  border: 0.5px solid var(--border2);
+  border-radius: 2px;
+}
+
+.we-tag.accent {
+  color: var(--acc);
+  background: var(--acc-bg);
+  border-color: var(--acc-border);
+}
+
+.we-cta {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-xs);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--acc);
+  transition: gap 0.2s ease;
+}
+
+.work-entry:hover .we-cta {
+  gap: var(--sp-sm);
+}
+
+.we-cta-arrow {
+  transition: transform 0.2s ease;
+}
+
+.work-entry:hover .we-cta-arrow {
+  transform: translate(3px, -3px);
+}
+
+/* ─────────────────────────────────────────────
+   Work entry visual area
+   ───────────────────────────────────────────── */
+
+.we-right {
+  display: flex;
+  align-items: flex-start;
+}
+
+.we-visual {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  border: 0.5px solid var(--border);
+  background: var(--surface);
+  overflow: hidden;
+  border-radius: 2px;
+  transition: transform 0.2s ease;
+}
+
+.work-entry:hover .we-visual {
+  transform: scale(1.03);
+}
+
+.we-visual-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.we-visual-placeholder-inner {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 400;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+
+/* ─────────────────────────────────────────────
+   Section divider
+   ───────────────────────────────────────────── */
+
+.work-section-divider {
+  padding: var(--sp-lg) 0 var(--sp-md);
+  margin: 0 var(--sp-lg);
+  border-top: 0.5px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+}
+
+.work-section-label {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 400;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+
+/* ─────────────────────────────────────────────
+   Small work entries
+   ───────────────────────────────────────────── */
+
+.work-entry-small {
+  display: grid;
+  grid-template-columns: 80px 1fr auto;
+  align-items: center;
+  height: 72px;
+  border-bottom: 0.5px solid var(--border);
+  padding: 0 var(--sp-lg);
+  cursor: pointer;
+  transition: background 0.2s ease;
+  margin: 0 calc(var(--sp-lg) * -1);
+  padding: 0 var(--sp-lg);
+}
+
+.work-entry-small:hover {
+  background: rgba(200, 212, 78, 0.025);
+}
+
+.wes-index {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  color: var(--tx3);
+}
+
+.wes-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wes-title {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--tx);
+}
+
+.wes-short {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 300;
+  color: var(--tx2);
+}
+
+.wes-arrow {
+  font-size: 16px;
+  color: var(--tx3);
+  transition: color 0.2s ease, transform 0.2s ease;
+}
+
+.work-entry-small:hover .wes-arrow {
+  color: var(--acc);
+  transform: translate(3px, -3px);
+}
+
+/* ─────────────────────────────────────────────
+   Work footer
+   ───────────────────────────────────────────── */
+
+.work-footer {
+  padding: var(--sp-3xl) var(--sp-lg);
+  border-top: 0.5px solid var(--border);
+  margin-top: var(--sp-2xl);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.work-footer-text {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}

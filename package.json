@@ -1,0 +1,22 @@
+{
+  "name": "aniket-portfolio-v2",
+  "type": "module",
+  "version": "0.0.1",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "@studio-freight/lenis": "^1.0.42",
+    "astro": "^4.16.18",
+    "gsap": "^3.12.5",
+    "howler": "^2.2.4",
+    "postprocessing": "^6.39.1",
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.170.0"
+  }
+}

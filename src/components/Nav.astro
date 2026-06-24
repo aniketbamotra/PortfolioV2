@@ -1,0 +1,38 @@
+---
+// Nav — fixed top bar. Logo left, links right.
+// Logo pulse animation via logo.js. Navigation via nav.js goto().
+---
+<link rel="stylesheet" href="/src/styles/nav.css" />
+
+<nav class="nav">
+  <div class="nav-logo" data-view="home" title="Home">
+    <!-- Logo SVG — IDs used by logo.js for sine-wave opacity animation -->
+    <svg class="nav-logo-mark" viewBox="0 0 201 135" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <circle id="logo-c1" cx="67" cy="67" r="65" stroke="#c8d44e" stroke-width="3"/>
+      <line x1="2" y1="2" x2="2" y2="65" stroke="#c8d44e" stroke-width="3" stroke-linecap="round"/>
+      <circle id="logo-c2" cx="133.631" cy="67.4736" r="65" stroke="#c8d44e" stroke-width="3" stroke-opacity="0.45"/>
+      <line x1="199" y1="132" x2="199" y2="69" stroke="#c8d44e" stroke-width="3" stroke-linecap="round" stroke-opacity="0.45"/>
+    </svg>
+    <span class="nav-logo-name">Aniket</span>
+  </div>
+
+  <ul class="nav-links">
+    <li>
+      <span class="nav-link active" data-view="home" role="button" tabindex="0">Work</span>
+    </li>
+    <li>
+      <span class="nav-link" data-view="work" role="button" tabindex="0">All Projects</span>
+    </li>
+    <li>
+      <span class="nav-link" data-view="about" role="button" tabindex="0">About</span>
+    </li>
+  </ul>
+</nav>
+
+<script>
+  import { initNav } from '../scripts/nav.js';
+  import { initLogo } from '../scripts/logo.js';
+
+  initNav();
+  initLogo();
+</script>

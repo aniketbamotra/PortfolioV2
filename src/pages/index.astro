@@ -1,0 +1,178 @@
+---
+// Single-page app shell. All three views live here as toggled div.view elements.
+// Navigation between views uses goto(viewId) in nav.js — no URL changes, no router.
+import Nav from '../components/Nav.astro';
+import WorkEntry from '../components/WorkEntry.astro';
+import WorkEntrySmall from '../components/WorkEntrySmall.astro';
+import { ALL_PROJECTS } from '../data/projects.js';
+
+const majorProjects = ALL_PROJECTS.filter(p => p.hasCaseStudy);
+const minorProjects = ALL_PROJECTS.filter(p => !p.hasCaseStudy);
+---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aniket Bamotra — UX Engineer & Creative Technologist</title>
+  <meta name="description" content="UX Engineer and Creative Technologist. Design × Engineering." />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="stylesheet" href="/src/styles/global.css" />
+  <link rel="stylesheet" href="/src/styles/home.css" />
+  <link rel="stylesheet" href="/src/styles/work.css" />
+  <link rel="stylesheet" href="/src/styles/about.css" />
+  <link rel="stylesheet" href="/src/styles/nav.css" />
+</head>
+<body>
+  <!-- Curtain overlay for page transitions -->
+  <div id="curtain"></div>
+
+  <!-- Persistent nav -->
+  <Nav />
+
+  <!-- ── Homepage view ─────────────────────────── -->
+  <div id="home" class="view active">
+    <canvas id="three-canvas"></canvas>
+    <nav class="project-index" id="projectIndex"><!-- populated by three-scene.js --></nav>
+    <div class="scene-meta">
+      <div class="scene-role" id="sceneRole">UX Engineer · Lead</div>
+      <div class="scene-year" id="sceneYear">2024</div>
+    </div>
+    <div class="scene-cta">
+      <a class="btn-scene-cta" id="sceneCta" href="#">View Project ↗</a>
+    </div>
+  </div>
+
+  <!-- ── Work view ─────────────────────────────── -->
+  <div id="work" class="view">
+    <div class="work-header">
+      <h1 class="work-header-title">Selected<br/>Work</h1>
+      <div class="work-header-right">
+        <p class="work-header-desc">
+          A selection of enterprise systems, creative builds, and open experiments.
+          Each project is owned end-to-end — strategy through production.
+        </p>
+        <span class="work-header-meta">{ALL_PROJECTS.length} projects · 2022 – Ongoing</span>
+      </div>
+    </div>
+
+    <div class="work-entries">
+      {majorProjects.map((project, i) => (
+        <WorkEntry project={project} index={i + 1} />
+      ))}
+    </div>
+
+    <div class="work-section-divider">
+      <span class="work-section-label">More work</span>
+    </div>
+
+    <div class="work-entries">
+      {minorProjects.map((project, i) => (
+        <WorkEntrySmall project={project} index={majorProjects.length + i + 1} />
+      ))}
+    </div>
+
+    <footer class="work-footer">
+      <span class="work-footer-text">Aniket Bamotra · {new Date().getFullYear()}</span>
+      <span class="work-footer-text">More available on request</span>
+    </footer>
+  </div>
+
+  <!-- ── About view ─────────────────────────────── -->
+  <div id="about" class="view">
+    <div class="about-inner">
+      <h1 class="about-name">Aniket<br/>Bamotra</h1>
+
+      <div class="about-descriptor">
+        <span class="about-descriptor-line1">Design × Engineering.</span>
+        <span class="about-descriptor-line2">Building interfaces where both sides think.</span>
+      </div>
+
+      <div class="about-bio">
+        <p>
+          I work at the intersection of design systems, creative technology, and interface engineering.
+          For the past several years I've been embedded in enterprise product teams — building
+          the foundations other designers and engineers build on top of.
+        </p>
+        <p>
+          The work that energises me most lives in the seam between disciplines: systems that are
+          technically rigorous and visually considered simultaneously, and interfaces where the
+          craft is visible if you know where to look.
+        </p>
+      </div>
+
+      <div class="about-meta">
+        <div class="about-meta-item">
+          <span class="about-meta-label">Based in</span>
+          <span class="about-meta-value">Remote</span>
+        </div>
+        <div class="about-meta-item">
+          <span class="about-meta-label">Years active</span>
+          <span class="about-meta-value">2019 – Present</span>
+        </div>
+        <div class="about-meta-item">
+          <span class="about-meta-label">Current title</span>
+          <span class="about-meta-value">UX Engineer · Senior</span>
+        </div>
+        <div class="about-meta-item">
+          <span class="about-meta-label">Status</span>
+          <span class="about-meta-value">Open to opportunities</span>
+        </div>
+        <div class="about-meta-item">
+          <span class="about-meta-label">Focus</span>
+          <span class="about-meta-value">Design Systems, Creative Technology</span>
+        </div>
+        <div class="about-meta-item">
+          <span class="about-meta-label">Looking for</span>
+          <span class="about-meta-value">Studios, product teams, 0→1</span>
+        </div>
+      </div>
+
+      <p class="about-contact-label">Contact</p>
+      <div class="about-contact">
+        <a href="mailto:hello@aniketbamotra.com" class="contact-link">
+          <div class="contact-link-left">
+            <span class="contact-link-platform">Email</span>
+            <span class="contact-link-handle">hello@aniketbamotra.com</span>
+          </div>
+          <span class="contact-link-arrow">&#8599;</span>
+        </a>
+        <a href="https://linkedin.com/in/aniketbamotra" target="_blank" rel="noopener" class="contact-link">
+          <div class="contact-link-left">
+            <span class="contact-link-platform">LinkedIn</span>
+            <span class="contact-link-handle">linkedin.com/in/aniketbamotra</span>
+          </div>
+          <span class="contact-link-arrow">&#8599;</span>
+        </a>
+        <a href="https://github.com/aniketbamotra" target="_blank" rel="noopener" class="contact-link">
+          <div class="contact-link-left">
+            <span class="contact-link-platform">GitHub</span>
+            <span class="contact-link-handle">github.com/aniketbamotra</span>
+          </div>
+          <span class="contact-link-arrow">&#8599;</span>
+        </a>
+        <a href="https://twitter.com/aniketbamotra" target="_blank" rel="noopener" class="contact-link">
+          <div class="contact-link-left">
+            <span class="contact-link-platform">Twitter / X</span>
+            <span class="contact-link-handle">@aniketbamotra</span>
+          </div>
+          <span class="contact-link-arrow">&#8599;</span>
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    import { initScene, setPaused } from '../scripts/three-scene.js';
+    import { registerOrbitCallbacks } from '../scripts/nav.js';
+
+    const canvas = document.getElementById('three-canvas') as HTMLCanvasElement;
+    if (canvas) initScene(canvas);
+
+    registerOrbitCallbacks((paused: boolean) => {
+      setPaused(paused);
+    });
+  </script>
+</body>
+</html>

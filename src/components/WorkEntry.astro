@@ -1,0 +1,56 @@
+---
+// WorkEntry — major work page entry.
+// Full 3-column layout: index / left-content / right-visual.
+import type { PROJECTS } from '../data/projects.js';
+
+interface Props {
+  project: typeof PROJECTS[0];
+  index: number;
+}
+
+const { project, index } = Astro.props;
+const indexStr = String(index).padStart(2, '0');
+---
+
+<article class="work-entry">
+  <div class="we-index">{indexStr}</div>
+
+  <div class="we-left">
+    <div>
+      <div class="we-type-row">
+        <span class="we-type-dot"></span>
+        <span class="we-type-label">{project.accentTag}</span>
+      </div>
+      <h2 class="we-title">{project.title}</h2>
+      <p class="we-desc">{project.longDesc}</p>
+      <div class="we-tags">
+        <span class="we-tag accent">{project.accentTag}</span>
+        {project.tags.map(tag => (
+          <span class="we-tag">{tag}</span>
+        ))}
+      </div>
+    </div>
+
+    <div class="we-cta">
+      {project.hasCaseStudy ? (
+        <>Case Study <span class="we-cta-arrow">&#8599;</span></>
+      ) : project.liveUrl ? (
+        <>View Live <span class="we-cta-arrow">&#8599;</span></>
+      ) : (
+        <>Case Study Soon</>
+      )}
+    </div>
+  </div>
+
+  <div class="we-right">
+    <div class="we-visual">
+      {project.coverImage ? (
+        <img src={project.coverImage} alt={project.title} loading="lazy" />
+      ) : (
+        <div class="we-visual-placeholder">
+          <span class="we-visual-placeholder-inner">Cover image pending</span>
+        </div>
+      )}
+    </div>
+  </div>
+</article>

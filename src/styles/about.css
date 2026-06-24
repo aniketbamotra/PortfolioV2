@@ -1,0 +1,177 @@
+/* ─────────────────────────────────────────────
+   About page — single constrained column
+   Nothing animates here.
+   ───────────────────────────────────────────── */
+
+#about {
+  background: var(--bg);
+  padding-top: var(--nav-h);
+  min-height: 100vh;
+}
+
+.about-inner {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: var(--sp-3xl) var(--sp-lg) 120px;
+}
+
+/* ─────────────────────────────────────────────
+   Name / display heading
+   ───────────────────────────────────────────── */
+
+.about-name {
+  font-family: var(--font-sans);
+  font-size: clamp(36px, 6vw, 80px);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 0.92;
+  color: var(--tx);
+  margin-bottom: var(--sp-lg);
+}
+
+/* ─────────────────────────────────────────────
+   Descriptor — two lines
+   Line 2 is italic Inter 300, --tx2
+   ───────────────────────────────────────────── */
+
+.about-descriptor {
+  margin-bottom: var(--sp-2xl);
+}
+
+.about-descriptor-line1 {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--tx2);
+  display: block;
+}
+
+.about-descriptor-line2 {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 300;
+  font-style: italic;
+  color: var(--tx2);
+  display: block;
+}
+
+/* ─────────────────────────────────────────────
+   Bio
+   ───────────────────────────────────────────── */
+
+.about-bio {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+  margin-bottom: var(--sp-3xl);
+}
+
+.about-bio p {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 300;
+  line-height: 1.75;
+  color: var(--tx2);
+}
+
+/* ─────────────────────────────────────────────
+   Meta grid
+   ───────────────────────────────────────────── */
+
+.about-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-lg) var(--sp-2xl);
+  margin-bottom: var(--sp-3xl);
+  padding: var(--sp-lg) 0;
+  border-top: 0.5px solid var(--border);
+  border-bottom: 0.5px solid var(--border);
+}
+
+.about-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.about-meta-label {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 400;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+
+.about-meta-value {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--tx);
+}
+
+/* ─────────────────────────────────────────────
+   Contact links — full-width rows with dividers
+   ───────────────────────────────────────────── */
+
+.about-contact-label {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 400;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--tx3);
+  margin-bottom: var(--sp-sm);
+}
+
+.about-contact {
+  border-top: 0.5px solid var(--border);
+}
+
+.contact-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-md) 0;
+  border-bottom: 0.5px solid var(--border);
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.contact-link:hover {
+  background: rgba(200, 212, 78, 0.02);
+  padding-left: var(--sp-xs);
+}
+
+.contact-link-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.contact-link-platform {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+
+.contact-link-handle {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--tx);
+}
+
+.contact-link-arrow {
+  font-size: 18px;
+  color: var(--tx3);
+  transition: color 0.2s ease, transform 0.2s ease;
+}
+
+.contact-link:hover .contact-link-arrow {
+  color: var(--acc);
+  transform: translate(3px, -3px);
+}

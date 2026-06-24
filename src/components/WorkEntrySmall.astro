@@ -1,0 +1,23 @@
+---
+// WorkEntrySmall — compact single-row work entry.
+import type { PROJECTS } from '../data/projects.js';
+
+interface Props {
+  project: typeof PROJECTS[0];
+  index: number;
+}
+
+const { project, index } = Astro.props;
+const indexStr = String(index).padStart(2, '0');
+---
+
+<article class="work-entry-small">
+  <span class="wes-index">{indexStr}</span>
+
+  <div class="wes-body">
+    <h3 class="wes-title">{project.title}</h3>
+    <p class="wes-short">{project.shortDesc}</p>
+  </div>
+
+  <span class="wes-arrow">&#8599;</span>
+</article>

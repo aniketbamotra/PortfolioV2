@@ -1,0 +1,42 @@
+---
+// BottomBar — fixed bottom HUD on homepage.
+// Project name, role, year updated by three-orbit.js.
+// Volume slider rendered now; audio wired up in Phase 2.
+// Prev/Next arrows call prevProject() / nextProject() from three-orbit.js.
+---
+<div class="bottom-bar">
+  <div class="bb-left">
+    <div class="bb-meta-item">
+      <span class="bb-label">Project</span>
+      <span class="bb-value" id="bb-project">&mdash;</span>
+    </div>
+    <div class="bb-meta-item">
+      <span class="bb-label">Role</span>
+      <span class="bb-value" id="bb-role">&mdash;</span>
+    </div>
+    <div class="bb-meta-item">
+      <span class="bb-label">Year</span>
+      <span class="bb-value" id="bb-year">&mdash;</span>
+    </div>
+  </div>
+
+  <div class="bb-right">
+    <!-- Phase 2: audio.js will connect this slider to Howler.js -->
+    <div class="bb-volume">
+      <span class="bb-volume-label">Vol</span>
+      <input type="range" id="vol-slider" min="0" max="100" value="60" step="1" aria-label="Volume" />
+    </div>
+
+    <div class="bb-nav-arrows">
+      <button class="bb-arrow" id="bb-prev" aria-label="Previous project">&#8592;</button>
+      <button class="bb-arrow" id="bb-next" aria-label="Next project">&#8594;</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  import { prevProject, nextProject } from '../scripts/three-orbit.js';
+
+  document.getElementById('bb-prev')?.addEventListener('click', prevProject);
+  document.getElementById('bb-next')?.addEventListener('click', nextProject);
+</script>

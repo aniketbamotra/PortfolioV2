@@ -1,0 +1,107 @@
+---
+// About page — standalone route at /about for direct linking.
+// Primary navigation is through the SPA shell in pages/index.astro.
+// Nothing animates here. Static content only.
+import Nav from '../components/Nav.astro';
+---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>About — Aniket Bamotra</title>
+  <meta name="description" content="UX Engineer and Creative Technologist. Design × Engineering." />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="stylesheet" href="/src/styles/global.css" />
+  <link rel="stylesheet" href="/src/styles/about.css" />
+  <link rel="stylesheet" href="/src/styles/nav.css" />
+</head>
+<body>
+  <div id="curtain"></div>
+  <Nav />
+
+  <div id="about" class="view active">
+    <div class="about-inner">
+      <h1 class="about-name">Aniket<br/>Bamotra</h1>
+
+      <div class="about-descriptor">
+        <span class="about-descriptor-line1">Design × Engineering.</span>
+        <span class="about-descriptor-line2">Building interfaces where both sides think.</span>
+      </div>
+
+      <div class="about-bio">
+        <p>
+          I work at the intersection of design systems, creative technology, and interface engineering.
+          For the past several years I've been embedded in enterprise product teams — building
+          the foundations other designers and engineers build on top of.
+        </p>
+        <p>
+          The work that energises me most lives in the seam between disciplines: systems that are
+          technically rigorous and visually considered simultaneously, and interfaces where the
+          craft is visible if you know where to look.
+        </p>
+      </div>
+
+      <div class="about-meta">
+        <div class="about-meta-item">
+          <span class="about-meta-label">Based in</span>
+          <span class="about-meta-value">Remote</span>
+        </div>
+        <div class="about-meta-item">
+          <span class="about-meta-label">Years active</span>
+          <span class="about-meta-value">2019 – Present</span>
+        </div>
+        <div class="about-meta-item">
+          <span class="about-meta-label">Current title</span>
+          <span class="about-meta-value">UX Engineer · Senior</span>
+        </div>
+        <div class="about-meta-item">
+          <span class="about-meta-label">Status</span>
+          <span class="about-meta-value">Open to opportunities</span>
+        </div>
+        <div class="about-meta-item">
+          <span class="about-meta-label">Focus</span>
+          <span class="about-meta-value">Design Systems, Creative Technology</span>
+        </div>
+        <div class="about-meta-item">
+          <span class="about-meta-label">Looking for</span>
+          <span class="about-meta-value">Studios, product teams, 0→1</span>
+        </div>
+      </div>
+
+      <p class="about-contact-label">Contact</p>
+      <div class="about-contact">
+        <a href="mailto:hello@aniketbamotra.com" class="contact-link">
+          <div class="contact-link-left">
+            <span class="contact-link-platform">Email</span>
+            <span class="contact-link-handle">hello@aniketbamotra.com</span>
+          </div>
+          <span class="contact-link-arrow">&#8599;</span>
+        </a>
+        <a href="https://linkedin.com/in/aniketbamotra" target="_blank" rel="noopener" class="contact-link">
+          <div class="contact-link-left">
+            <span class="contact-link-platform">LinkedIn</span>
+            <span class="contact-link-handle">linkedin.com/in/aniketbamotra</span>
+          </div>
+          <span class="contact-link-arrow">&#8599;</span>
+        </a>
+        <a href="https://github.com/aniketbamotra" target="_blank" rel="noopener" class="contact-link">
+          <div class="contact-link-left">
+            <span class="contact-link-platform">GitHub</span>
+            <span class="contact-link-handle">github.com/aniketbamotra</span>
+          </div>
+          <span class="contact-link-arrow">&#8599;</span>
+        </a>
+        <a href="https://twitter.com/aniketbamotra" target="_blank" rel="noopener" class="contact-link">
+          <div class="contact-link-left">
+            <span class="contact-link-platform">Twitter / X</span>
+            <span class="contact-link-handle">@aniketbamotra</span>
+          </div>
+          <span class="contact-link-arrow">&#8599;</span>
+        </a>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
