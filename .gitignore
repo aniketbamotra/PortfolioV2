@@ -4,4 +4,4 @@ dist
 source-assets
 .DS_Store
 **/.DS_Store
-0001Showimagefragmentoneverycubeinsteadofbluegl.patch
+*.patch

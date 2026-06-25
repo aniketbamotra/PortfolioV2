@@ -32,6 +32,7 @@ let _N        = 0;
 let _curPos   = null;  // base cube position (matrix written once; shader animates on top)
 let _scaleArr = null;  // per-instance uniform scale
 let _vox      = null;  // per-cube (depthNorm, rand, lum) → D2 motion/visibility
+let _colRand  = null;  // per-COLUMN random (same for all 6 depth cubes in a cell) → whole-column cull
 let _revealArr  = null;  // per-cube eased reveal 0→1 (asymmetric attack/release → smooth fade-out)
 let _revealAttr = null;  // InstancedBufferAttribute wrapping _revealArr (uploaded per frame)
 const _m4 = new THREE.Matrix4();
@@ -313,6 +314,7 @@ async function _buildVoxelCard() {
   _scaleArr = new Float32Array(N);
   _uvOffset = new Float32Array(N * 2);
   _vox      = new Float32Array(N * 3); // per-cube (depthNorm, rand, lum) for D2 motion/visibility
+  _colRand  = new Float32Array(N);     // per-column random (shared across the 6 depth layers)
   _revealArr = new Float32Array(N);    // eased per-cube reveal (starts hidden)
 
   // C2: each cube maps its own UV window of the shared cover texture (image fragments).
@@ -348,6 +350,10 @@ async function _buildVoxelCard() {
     _uvOffset[i * 2]     = offU + gx * (spanU / GRID_COLS);
     _uvOffset[i * 2 + 1] = offV + gz * (spanV / GRID_ROWS);
 
+    // per-column random: hash the grid cell only (no depth) → identical for all 6 layers,
+    // so the cull removes/keeps a whole depth column together (no orphan cubes).
+    _colRand[i] = _hash(gx, gz, 0);
+
     // Brightness-driven depth relief (small — preserves the Blender layout).
     const rz = wz + (px.lum - 0.5) * DEPTH_LUM + (h - 0.5) * DEPTH_NOISE;
     _curPos[i * 3] = wx; _curPos[i * 3 + 1] = wy; _curPos[i * 3 + 2] = rz;
@@ -362,6 +368,7 @@ async function _buildVoxelCard() {
   const geo = new THREE.BoxGeometry(cube, cube, cube);
   geo.setAttribute('aUvOffset', new THREE.InstancedBufferAttribute(_uvOffset, 2));
   geo.setAttribute('aVox', new THREE.InstancedBufferAttribute(_vox, 3));
+  geo.setAttribute('aColRand', new THREE.InstancedBufferAttribute(_colRand, 1));
   _revealAttr = new THREE.InstancedBufferAttribute(_revealArr, 1);
   _revealAttr.setUsage(THREE.DynamicDrawUsage);
   geo.setAttribute('aReveal', _revealAttr);
@@ -550,7 +557,7 @@ function _patchCube(material) {
     Object.assign(shader.uniforms, {
       uTileScale: { value: _uvScale },
       uUvOrigin:   { value: _uvOrigin }, // (offU,offV) cover-fit origin for live-position UV
-      uDriftAmt:   { value: 0.22 },      // XY drift magnitude (world units, ~a few cells)
+      uDriftAmt:   { value: 0.12 },      // XY drift magnitude (world units, ~a few cells)
       uDriftSpeed: { value: 0.4 },       // drift wander speed
       uCursor:    { value: _cursor },
       uHover:     { value: _hover },
@@ -570,7 +577,10 @@ function _patchCube(material) {
       uRippleSpeed: { value: 1.4 },  // outward travel speed (radians/sec)
       uRippleAmp:   { value: 0.12 }, // base Z amplitude of the wave
       uRippleGrow:  { value: 0.16 }, // extra amplitude per cube outward (wave swells at edges)
-      uDepthVisFar:   { value: 0.5 },                       // opacity of the deepest layer (near = 1.0, mid ≈ 0.75)
+      uDepthVisFar:   { value: 0.6 },                       // opacity of the deepest layer (near = 1.0, mid ≈ 0.75)
+      uKeepFrac:      { value: 0.6 },                        // keep fraction at the far edges (centre stays 100%)
+      uDenseRadius:   { value: 5.0 },                       // cubes within this radius stay fully dense
+      uFadeRadius:    { value: 22.0 },                       // by this radius, keep eases to uKeepFrac (corner ≈ 23)
       uPullXY:     { value: 0.18 },
       uPullZ:      { value: 0.10 },
       uOuterFade:  { value: 0.55 },
@@ -578,18 +588,18 @@ function _patchCube(material) {
       uHoleThresh: { value: 0.12 },
       uHoleDepth:  { value: 0.70 },
       // D3 — depth cloud + scale-based visibility (compact, dense middle core)
-      uDepthScatter: { value: 0.2 },  // per-cube Z spread → 3D cloud (compressed)
-      uDepthFunnel:  { value: 0.25 }, // push the centre back into a tunnel
+      uDepthScatter: { value: 0.08 }, // per-cube Z spread → 3D cloud (compressed)
+      uDepthFunnel:  { value: 0.06 }, // push the centre back into a tunnel
       uHideScale:    { value: 0.0 },  // hidden cubes shrink to this (crisp cull)
     });
     _revealU = shader.uniforms;
 
     shader.vertexShader = shader.vertexShader
       .replace('void main() {', /* glsl */`
-        attribute vec2 aUvOffset; attribute vec3 aVox; attribute float aReveal;
+        attribute vec2 aUvOffset; attribute vec3 aVox; attribute float aReveal; attribute float aColRand;
         uniform vec2 uTileScale; uniform vec2 uCursor; uniform vec2 uHalfExtent; uniform vec2 uUvOrigin;
         uniform float uHover; uniform float uRadius; uniform float uIdleFloor; uniform float uDriftAmt; uniform float uDriftSpeed;
-        uniform float uTime; uniform float uRippleStart; uniform float uRippleFreq; uniform float uRippleSpeed; uniform float uRippleAmp; uniform float uRippleGrow; uniform float uDepthVisFar;
+        uniform float uTime; uniform float uRippleStart; uniform float uRippleFreq; uniform float uRippleSpeed; uniform float uRippleAmp; uniform float uRippleGrow; uniform float uDepthVisFar; uniform float uKeepFrac; uniform float uDenseRadius; uniform float uFadeRadius;
         uniform float uPullXY; uniform float uPullZ;
         uniform float uOuterFade; uniform float uEdgeLayer; uniform float uHoleThresh; uniform float uHoleDepth;
         uniform float uDepthScatter; uniform float uDepthFunnel; uniform float uHideScale;
@@ -603,8 +613,8 @@ function _patchCube(material) {
         #include <begin_vertex>
         vec3  _ctr = vec3(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2]);
         float _r   = clamp(length(_ctr.xy / uHalfExtent), 0.0, 1.0); // 0 centre → ~1 edge
-        float _lay = aVox.x;  float _rnd = aVox.y;
-        float _rnd2 = fract(_rnd * 263.17 + 0.137);                  // decorrelated 2nd random
+        float _lay = aVox.x;
+        float _cr2 = fract(aColRand * 263.17 + 0.137);              // per-column 2nd random (decorrelated)
         // cursor pool (D1 reveal)
         float _d    = distance(_ctr.xy, uCursor);
         float _pool = smoothstep(uRadius, 0.0, _d) * uHover;
@@ -612,17 +622,24 @@ function _patchCube(material) {
         // radial distance in cube units (shared by the ripple below)
         float _cell      = (2.0 * uHalfExtent.x) / 40.0; // world size of one grid cell
         float _distCells = length(_ctr.xy) / _cell;
-        // every cube carries the image at its depth-faded opacity → dense field (all 6 layers)
+        // every cube carries the image at its depth-faded opacity (all 6 layers)
         float _depthVis = mix(uDepthVisFar, 1.0, _lay); // near 1.0 · mid ~0.75 · far uDepthVisFar
-        vAlpha = _depthVis;
-        // cubes settle to the grid under the cursor (crisp lens), scatter + ripple elsewhere
-        float _move = 1.0 - aReveal;
-        // gentle XY drift so cubes traverse the image in the cloud (zero under the hover lens)
-        vec2 _drift = vec2(sin(uTime * uDriftSpeed + _rnd  * 6.2831),
-                           cos(uTime * uDriftSpeed * 0.9 + _rnd2 * 6.2831)) * uDriftAmt * _move;
+        // radial keep gradient: 100% dense in the centre, easing to uKeepFrac toward the
+        // edges (no hard ring). Per-column random → whole columns kept/removed together.
+        float _keepProb = mix(1.0, uKeepFrac, smoothstep(uDenseRadius, uFadeRadius, _distCells));
+        float _cand   = step(_keepProb, aColRand);
+        float _hidden = _cand * (1.0 - aReveal);
+        vAlpha = _depthVis * (1.0 - _hidden);
+        // motion fades in by radius: still/flat dense centre, animated cloud toward edges.
+        // (drift + scatter + ripple all multiply by _move, so this gates them together.)
+        float _move = (1.0 - aReveal) * smoothstep(uDenseRadius, uFadeRadius, _distCells);
+        // gentle XY drift — whole column drifts together (per-column random) so it stays a
+        // coherent stack instead of splitting into orphan cubes. Zero under the hover lens.
+        vec2 _drift = vec2(sin(uTime * uDriftSpeed + aColRand * 6.2831),
+                           cos(uTime * uDriftSpeed * 0.9 + _cr2 * 6.2831)) * uDriftAmt * _move;
         transformed.xy += _drift;
-        // static Z scatter → exploded 3D glass cloud
-        float _scatterZ = (_rnd2 - 0.5) * 2.0 * uDepthScatter - (1.0 - _r) * uDepthFunnel;
+        // static Z scatter → whole column shifts together (keeps its 6-layer depth spacing)
+        float _scatterZ = (_cr2 - 0.5) * 2.0 * uDepthScatter - (1.0 - _r) * uDepthFunnel;
         transformed.z += _scatterZ * _move;
         // radial ripple — concentric wave through the glass cloud
         float _ring      = smoothstep(uRippleStart, uRippleStart + 4.0, _distCells);
@@ -784,6 +801,6 @@ export function destroy() {
   });
   composer?.dispose();
   renderer?.dispose();
-  _curPos = _scaleArr = _uvOffset = _vox = _revealArr = _revealAttr = null;
+  _curPos = _scaleArr = _uvOffset = _vox = _colRand = _revealArr = _revealAttr = null;
   renderer = composer = scene = camera = cardGroup = voxelMesh = glowPlane = _coverTex = _revealU = null;
 }

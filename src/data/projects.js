@@ -16,7 +16,7 @@ export const PROJECTS = [
     atmosphereColor: '#08080f',
     envAccent: '#7fa0ff',     // environment tint (ground/clouds/haze/glow)
     shaderType: 'token-grid',
-    coverImage: '/assets/projects/keploy.png',
+    coverImage: '/assets/projects/gemx.png',
     caseStudy: {
       layout: 'dls',
       challenge: '',
