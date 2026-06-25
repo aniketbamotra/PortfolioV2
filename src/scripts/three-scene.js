@@ -50,6 +50,7 @@ const DEPTH_NOISE = 0.03;  // tiny organic break-up
 const GRID_COLS = 40, GRID_ROWS = 24; // voxel face grid (matches the Blender model)
 let _uvOffset = null;                 // per-cube tile origin in cover-texture space (vec2)
 const _uvScale = new THREE.Vector2(); // shared tile size (cover-fit / grid)
+const _uvOrigin = new THREE.Vector2(); // cover-fit origin (offU, offV) for live-position UV
 const _texLoader = new THREE.TextureLoader();
 const _texCache  = {};
 let _coverTex = null;                 // current cover as a THREE.Texture (C2 map)
@@ -57,7 +58,7 @@ let _coverTex = null;                 // current cover as a THREE.Texture (C2 ma
 // ── Cursor reveal (D1) ───────────────────────────────────────────────────────
 // Per-cube reveal from cursor distance: idle = soft atmospheric ghost, near cursor
 // = sharp readable image tiles. Driven in the shader; cursor projected to card-local.
-const REVEAL_RADIUS = 1.3;  // local units (card face ~4 × 2.48) — tighter hover pool
+const REVEAL_RADIUS = 2.2;  // local units (card face ~4 × 2.48) — crisp-lens size
 const IDLE_FLOOR    = 1.0;  // full exposure everywhere — image stays sharp without hover
 let _revealU = null;        // shader.uniforms ref (uCursor / uHover updated per frame)
 const _cursor = new THREE.Vector2(0, 0);  // smoothed cursor in card-local face coords
@@ -327,6 +328,7 @@ async function _buildVoxelCard() {
     else                                  { spanV = texInfo.aspect / _cardFaceAspect; offV = (1 - spanV) / 2; }
   }
   _uvScale.set(spanU / GRID_COLS, spanV / GRID_ROWS);
+  _uvOrigin.set(offU, offV);
 
   for (let i = 0; i < N; i++) {
     const c = data[i];
@@ -393,10 +395,13 @@ async function _buildVoxelCard() {
 // C2 cube material: unlit, maps the shared cover via a per-cube UV window, with the
 // cursor-reveal grade + alphaHash dissolve patched into the shader.
 function _makeCubeMaterial() {
-  // Transparent → pulse-area cubes are hidden via per-instance alpha (full size) and
-  // fade in within the cursor pool. depthWrite stays on so the opaque tiles still sort.
+  // Cloud material: transparent with depthWrite OFF so cubes never depth-reject each
+  // other (no vanishing). At rest the scattered cubes overlap into a soft haze; the
+  // cursor lens collapses them back to the flat grid → crisp. NormalBlending = glassy
+  // haze (swap to AdditiveBlending for a glowing core).
   const m = new THREE.MeshBasicMaterial({
-    map: _coverTex, toneMapped: false, side: THREE.FrontSide, transparent: true,
+    map: _coverTex, toneMapped: false, side: THREE.FrontSide,
+    transparent: true, depthWrite: false, blending: THREE.NormalBlending,
   });
   _patchCube(m);
   return m;
@@ -544,6 +549,9 @@ function _patchCube(material) {
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, {
       uTileScale: { value: _uvScale },
+      uUvOrigin:   { value: _uvOrigin }, // (offU,offV) cover-fit origin for live-position UV
+      uDriftAmt:   { value: 0.22 },      // XY drift magnitude (world units, ~a few cells)
+      uDriftSpeed: { value: 0.4 },       // drift wander speed
       uCursor:    { value: _cursor },
       uHover:     { value: _hover },
       uRadius:    { value: REVEAL_RADIUS },
@@ -562,8 +570,7 @@ function _patchCube(material) {
       uRippleSpeed: { value: 1.4 },  // outward travel speed (radians/sec)
       uRippleAmp:   { value: 0.12 }, // base Z amplitude of the wave
       uRippleGrow:  { value: 0.16 }, // extra amplitude per cube outward (wave swells at edges)
-      uKeepFrac:    { value: 0.2 },  // fraction of cubes kept in the pulse area (rest hidden)
-      uDepthVisFar: { value: 0.5 },  // opacity of the deepest layer (near = 1.0, mid ≈ 0.75)
+      uDepthVisFar:   { value: 0.5 },                       // opacity of the deepest layer (near = 1.0, mid ≈ 0.75)
       uPullXY:     { value: 0.18 },
       uPullZ:      { value: 0.10 },
       uOuterFade:  { value: 0.55 },
@@ -580,9 +587,9 @@ function _patchCube(material) {
     shader.vertexShader = shader.vertexShader
       .replace('void main() {', /* glsl */`
         attribute vec2 aUvOffset; attribute vec3 aVox; attribute float aReveal;
-        uniform vec2 uTileScale; uniform vec2 uCursor; uniform vec2 uHalfExtent;
-        uniform float uHover; uniform float uRadius; uniform float uIdleFloor;
-        uniform float uTime; uniform float uRippleStart; uniform float uRippleFreq; uniform float uRippleSpeed; uniform float uRippleAmp; uniform float uRippleGrow; uniform float uKeepFrac; uniform float uDepthVisFar;
+        uniform vec2 uTileScale; uniform vec2 uCursor; uniform vec2 uHalfExtent; uniform vec2 uUvOrigin;
+        uniform float uHover; uniform float uRadius; uniform float uIdleFloor; uniform float uDriftAmt; uniform float uDriftSpeed;
+        uniform float uTime; uniform float uRippleStart; uniform float uRippleFreq; uniform float uRippleSpeed; uniform float uRippleAmp; uniform float uRippleGrow; uniform float uDepthVisFar;
         uniform float uPullXY; uniform float uPullZ;
         uniform float uOuterFade; uniform float uEdgeLayer; uniform float uHoleThresh; uniform float uHoleDepth;
         uniform float uDepthScatter; uniform float uDepthFunnel; uniform float uHideScale;
@@ -602,24 +609,32 @@ function _patchCube(material) {
         float _d    = distance(_ctr.xy, uCursor);
         float _pool = smoothstep(uRadius, 0.0, _d) * uHover;
         vReveal = clamp(uIdleFloor + (1.0 - uIdleFloor) * _pool, 0.0, 1.0);
-        // radial distance in cube units (shared by the cull + the ripple below)
+        // radial distance in cube units (shared by the ripple below)
         float _cell      = (2.0 * uHalfExtent.x) / 40.0; // world size of one grid cell
         float _distCells = length(_ctr.xy) / _cell;
-        // pulse area (beyond the dead zone): keep only ~uKeepFrac of cubes; the rest stay
-        // full size but hidden via opacity (alpha 0) and fade in within the cursor pool.
-        float _cand = step(uRippleStart, _distCells) * step(uKeepFrac, _rnd);
-        // depth fade: cubes deeper in the volume (_lay→0) are more transparent
+        // every cube carries the image at its depth-faded opacity → dense field (all 6 layers)
         float _depthVis = mix(uDepthVisFar, 1.0, _lay); // near 1.0 · mid ~0.75 · far uDepthVisFar
-        vAlpha = mix(1.0, aReveal, _cand) * _depthVis;  // aReveal eases in/out (smooth fade-out)
-        // big static Z scatter → exploded 3D cloud (XY stays = grid, image still reads)
-        transformed.z += (_rnd2 - 0.5) * 2.0 * uDepthScatter - (1.0 - _r) * uDepthFunnel;
-        // radial ripple — one concentric wave spreading outward from centre.
-        // dead zone: cubes within uRippleStart cells of centre stay flat; the wave
-        // ramps in over the next few rings so the boundary isn't a hard edge.
+        vAlpha = _depthVis;
+        // cubes settle to the grid under the cursor (crisp lens), scatter + ripple elsewhere
+        float _move = 1.0 - aReveal;
+        // gentle XY drift so cubes traverse the image in the cloud (zero under the hover lens)
+        vec2 _drift = vec2(sin(uTime * uDriftSpeed + _rnd  * 6.2831),
+                           cos(uTime * uDriftSpeed * 0.9 + _rnd2 * 6.2831)) * uDriftAmt * _move;
+        transformed.xy += _drift;
+        // static Z scatter → exploded 3D glass cloud
+        float _scatterZ = (_rnd2 - 0.5) * 2.0 * uDepthScatter - (1.0 - _r) * uDepthFunnel;
+        transformed.z += _scatterZ * _move;
+        // radial ripple — concentric wave through the glass cloud
         float _ring      = smoothstep(uRippleStart, uRippleStart + 4.0, _distCells);
-        // amplitude swells the further out the wave travels
         float _amp       = uRippleAmp * (1.0 + max(_distCells - uRippleStart, 0.0) * uRippleGrow);
-        transformed.z += sin(_distCells * uRippleFreq - uTime * uRippleSpeed) * _amp * _ring;`);
+        transformed.z += sin(_distCells * uRippleFreq - uTime * uRippleSpeed) * _amp * _ring * _move;
+        // live-position UV: sample the cover under the cube's CURRENT location, continuously
+        // (no grid quantization) so a drifting cube's fragment slides smoothly — no pop.
+        // Resolves to the correct image when collapsed (drift = 0) → crisp on hover.
+        vec2 _facePos = _ctr.xy + _drift;
+        vec2 _uv01    = clamp(_facePos / (2.0 * uHalfExtent) + 0.5, 0.0, 1.0);
+        vec2 _win     = uUvOrigin + _uv01 * (uTileScale * vec2(40.0, 24.0)) - 0.5 * uTileScale;
+        vMapUv = _win + uv * uTileScale;`);
 
     shader.fragmentShader = shader.fragmentShader
       .replace('void main() {', /* glsl */`
@@ -636,9 +651,8 @@ function _patchCube(material) {
         _c = (_c - 0.5) * mix(uConFar, 1.0, vReveal) + 0.5;         // soften contrast
         _c *= mix(uBrightFar, 1.0, vReveal);                       // dim when far
         _c = mix(_c, uFog, (1.0 - vReveal) * uFogAmt);             // cool atmospheric tint
-        diffuseColor.rgb = _c;
-        diffuseColor.a *= vAlpha;            // pulse-area cubes fade in/out via opacity
-        if (diffuseColor.a < 0.02) discard;  // fully-hidden cubes write no depth`);
+        diffuseColor.rgb = _c;                          // every cube shows its image fragment
+        diffuseColor.a *= vAlpha;                      // glass faint/clearing, image layer solid`);
   };
   material.customProgramCacheKey = () => 'voxel-cube-reveal';
 }
