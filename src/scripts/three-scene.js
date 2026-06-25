@@ -4,8 +4,6 @@
 // Exports: initScene(canvas), setProject(idx), setPaused(paused), destroy()
 
 import * as THREE from 'three';
-import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { EffectComposer, RenderPass, EffectPass, BloomEffect, VignetteEffect, ChromaticAberrationEffect, DepthOfFieldEffect } from 'postprocessing';
 import { ORBIT_PROJECTS } from '../data/projects.js';
 import { initEnvironment } from './environment.js';
@@ -39,10 +37,11 @@ const _m4 = new THREE.Matrix4();
 const _v3 = new THREE.Vector3();
 const _sv = new THREE.Vector3();
 const _qI = new THREE.Quaternion();
+const _torchPt = new THREE.Vector3(); // scratch: world point under the cursor torch
 
 // ── Atmospheric glow behind the card ─────────────────────────────────────────
-const GLOW_CLEAR  = 0.55;
-const GLOW_IMAGED = 0.12;
+const GLOW_CLEAR  = 0.35;
+const GLOW_IMAGED = 0.05;
 
 // ── Image reconstruction (the cubes ARE the image, C2: per-cube texture window) ─
 // Each cube maps its own UV window of the shared cover texture (aUvOffset + uTileScale).
@@ -81,50 +80,56 @@ const targetMouse  = new THREE.Vector2(0, 0);
 
 // ── Lighting presets per project ──────────────────────────────────────────────
 
+// Two controlled lights per project: a single SpotLight (hero pool aimed at the card centre,
+// on the camera side +Z) + an AmbientLight base fill. No env IBL, so these fully define the
+// look. angle/penumbra shape the pool; intensity/decay the falloff. Tune live.
+const SPOT_ANGLE    = 1;
+const SPOT_PENUMBRA = 0.85;
+const SPOT_DECAY    = 1.5;
+
+// Cursor torch — an interactive SpotLight that tracks the pointer over the card face.
+const TORCH_COLOR    = 0xffe8c0; // initial/fallback tint; per-frame it samples the cover under the cursor
+const TORCH_INT      = 80;       // peak intensity at full hover
+const TORCH_ANGLE    = 0.3;      // beam width (wider → softer, larger pool)
+const TORCH_PENUMBRA = 1.0;      // fully soft edge — no visible cone ring
+const TORCH_DECAY    = 3;
+const TORCH_STANDOFF = 2.5;      // world units in front of the face
+const _torchTint = new THREE.Color(TORCH_COLOR); // linear: the cover's dominant colour the torch eases toward
+
 const LIGHTING_PRESETS = [
-  // 0 — DLS — cool blue-violet tint (tuned for translucent glass)
+  // 0 — DLS — cool blue-violet tint
   {
-    ambient: 0x1a2238, ambientInt: 0.45,
-    key: 0xdfe6ff, keyInt: 2.2, keyPos:  [ 5,  7,  5],
-    fill: 0x3a4a80, fillInt: 0.7, fillPos: [-5,  2,  4],
-    rim: 0x7fa0ff, rimInt: 3.2,  rimPos:  [ 0, -2, -6],
+    ambient: 0x1a2238, ambientInt: 0.5,
+    spot: 0xdfe6ff, spotInt: 30, spotPos: [ 2, 4, 4],
     fog: 0x03030a, fogDensity: 0.014,
   },
   // 1 — Particles — electric blue
   {
-    ambient: 0x05050f, ambientInt: 0.3,
-    key: 0xaabbff, keyInt: 1.4, keyPos:  [-4,  6,  5],
-    fill: 0x2233aa, fillInt: 0.4, fillPos: [ 5,  1,  4],
-    rim: 0xffffff, rimInt: 0.6,  rimPos:  [ 1, -4, -5],
+    ambient: 0x05050f, ambientInt: 0.40,
+    spot: 0xaabbff, spotInt: 46, spotPos: [-2, 4, 4],
     fog: 0x020207, fogDensity: 0.020,
   },
   // 2 — Brand — warm emerald
   {
-    ambient: 0x040a05, ambientInt: 0.3,
-    key: 0x55ddaa, keyInt: 1.0, keyPos:  [ 2,  9,  4],
-    fill: 0x226644, fillInt: 0.4, fillPos: [-4,  2,  4],
-    rim: 0xc8d44e, rimInt: 0.4,  rimPos:  [-1, -3, -5],
+    ambient: 0x040a05, ambientInt: 0.40,
+    spot: 0x55ddaa, spotInt: 44, spotPos: [ 1, 5, 4],
     fog: 0x020605, fogDensity: 0.016,
   },
   // 3 — Analytics — deep navy
   {
-    ambient: 0x020408, ambientInt: 0.3,
-    key: 0x5577cc, keyInt: 1.2, keyPos:  [ 8,  5,  3],
-    fill: 0x112244, fillInt: 0.3, fillPos: [-4,  1,  4],
-    rim: 0x7799ff, rimInt: 0.6,  rimPos:  [ 0, -4, -5],
+    ambient: 0x020408, ambientInt: 0.40,
+    spot: 0x5577cc, spotInt: 48, spotPos: [ 3, 4, 4],
     fog: 0x010205, fogDensity: 0.022,
   },
   // 4 — Experiments — warm amber
   {
-    ambient: 0x0a0600, ambientInt: 0.3,
-    key: 0xffaa44, keyInt: 1.2, keyPos:  [ 5,  3,  6],
-    fill: 0x663322, fillInt: 0.4, fillPos: [-4,  3,  4],
-    rim: 0xc8d44e, rimInt: 0.5,  rimPos:  [ 0, -3, -5],
+    ambient: 0x0a0600, ambientInt: 0.40,
+    spot: 0xffaa44, spotInt: 48, spotPos: [ 2, 3, 5],
     fog: 0x060300, fogDensity: 0.016,
   },
 ];
 
-let ambientLight, keyLight, fillLight, rimLight;
+let ambientLight, spotLight, torchLight;
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
@@ -145,19 +150,8 @@ export function initScene(canvas) {
 
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x04040c);
-
-  // Procedural studio env for glass reflections; upgraded to studio.hdr once loaded.
-  const pmrem = new THREE.PMREMGenerator(renderer);
-  pmrem.compileEquirectangularShader();
-  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-
-  new RGBELoader().load('/assets/studio.hdr', (texture) => {
-    texture.mapping = THREE.EquirectangularReflectionMapping;
-    const hdrRT = pmrem.fromEquirectangular(texture);
-    scene.environment = hdrRT.texture;
-    texture.dispose();
-    pmrem.dispose();
-  });
+  // No scene.environment: cubes are lit by the controlled spot + ambient only (an HDR
+  // env map lights MeshStandardMaterial independently of the lights → uncontrolled brightness).
 
   camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 100);
   // Head-on with the card centre (cardGroup sits at y 0.3) so the face is square to camera.
@@ -165,7 +159,7 @@ export function initScene(canvas) {
   camera.lookAt(0, 0.3, 0);
 
   // Post-processing — bloom + vignette, plus DOF + chromatic aberration (cinematic).
-  bloomEffect = new BloomEffect({ intensity: 0.85, luminanceThreshold: 0.55, luminanceSmoothing: 0.7, mipmapBlur: true, radius: 0.6 });
+  bloomEffect = new BloomEffect({ intensity: 0.5, luminanceThreshold: 0.72, luminanceSmoothing: 0.7, mipmapBlur: true, radius: 0.6 });
   const vignetteEffect = new VignetteEffect({ darkness: 0.55, offset: 0.35 });
   const chromaticAberration = new ChromaticAberrationEffect({
     offset: new THREE.Vector2(0.0012, 0.0012), radialModulation: true, modulationOffset: 0.15,
@@ -191,19 +185,20 @@ export function initScene(canvas) {
   _handlers.resize();
   window.addEventListener('resize', _handlers.resize);
 
-  // Lighting — preset 0
+  // Lighting — preset 0: ambient base fill + a single controlled hero spot.
   const p0 = LIGHTING_PRESETS[0];
   ambientLight = new THREE.AmbientLight(p0.ambient, p0.ambientInt);
   scene.add(ambientLight);
-  keyLight = new THREE.DirectionalLight(p0.key, p0.keyInt);
-  keyLight.position.set(...p0.keyPos);
-  scene.add(keyLight);
-  fillLight = new THREE.DirectionalLight(p0.fill, p0.fillInt);
-  fillLight.position.set(...p0.fillPos);
-  scene.add(fillLight);
-  rimLight = new THREE.DirectionalLight(p0.rim, p0.rimInt);
-  rimLight.position.set(...p0.rimPos);
-  scene.add(rimLight);
+  spotLight = new THREE.SpotLight(p0.spot, p0.spotInt, 0, SPOT_ANGLE, SPOT_PENUMBRA, SPOT_DECAY);
+  spotLight.position.set(...p0.spotPos);
+  spotLight.target.position.set(0, 0.3, -0.6); // card centre (cardGroup origin)
+  scene.add(spotLight);
+  scene.add(spotLight.target);
+
+  // Cursor torch — off until the pointer hovers the card; driven in _updateReveal().
+  torchLight = new THREE.SpotLight(TORCH_COLOR, 0, 0, TORCH_ANGLE, TORCH_PENUMBRA, TORCH_DECAY);
+  scene.add(torchLight);
+  scene.add(torchLight.target);
 
   scene.fog = new THREE.FogExp2(p0.fog, p0.fogDensity);
   renderer.setClearColor(p0.fog);
@@ -320,6 +315,7 @@ async function _buildVoxelCard() {
   // C2: each cube maps its own UV window of the shared cover texture (image fragments).
   const cover  = ORBIT_PROJECTS[currentIdx]?.coverImage || null;
   const sample = await _buildColorSampler(cover);          // (u,v) → {lum} for depth relief
+  _torchTint.setRGB(sample.dominant.r, sample.dominant.g, sample.dominant.b, THREE.SRGBColorSpace); // torch tint
   const texInfo = cover ? await _loadCoverTexture(cover) : null; // {texture, aspect}
   _coverTex = texInfo?.texture || null;
 
@@ -406,8 +402,9 @@ function _makeCubeMaterial() {
   // other (no vanishing). At rest the scattered cubes overlap into a soft haze; the
   // cursor lens collapses them back to the flat grid → crisp. NormalBlending = glassy
   // haze (swap to AdditiveBlending for a glowing core).
-  const m = new THREE.MeshBasicMaterial({
-    map: _coverTex, toneMapped: false, side: THREE.FrontSide,
+  const m = new THREE.MeshStandardMaterial({
+    map: _coverTex, side: THREE.FrontSide,
+    roughness: 0.5, metalness: 0.0, envMapIntensity: 0.0, // env specular lifts black albedo → keep 0
     transparent: true, depthWrite: false, blending: THREE.NormalBlending,
   });
   _patchCube(m);
@@ -444,6 +441,19 @@ function _updateReveal() {
   _revealU.uCursor.value.copy(_cursor);
   _revealU.uHover.value = _hover;
 
+  // Cursor torch: aim a SpotLight straight at the card face under the (smoothed) cursor,
+  // from a standoff along the face normal; fade intensity in/out with hover presence.
+  if (torchLight) {
+    _torchPt.set(_cursor.x, _cursor.y, 0);
+    cardGroup.localToWorld(_torchPt);
+    torchLight.target.position.copy(_torchPt);
+    torchLight.position.copy(_torchPt).addScaledVector(_planeN, TORCH_STANDOFF);
+    torchLight.intensity = TORCH_INT * _hover;
+    // Hold the torch at the cover's single dominant colour (not a per-cursor sample) so it
+    // reads as one integrated tint; ease so it transitions smoothly on project change.
+    torchLight.color.lerp(_torchTint, 0.08);
+  }
+
   // Per-cube reveal easing: fast attack, slow release → cubes linger and fade out
   // smoothly when the cursor leaves instead of snapping back to hidden.
   if (_revealArr) {
@@ -473,19 +483,16 @@ export function setProject(idx) {
   const startTime = performance.now();
   const duration  = 800;
 
-  const fromKeyColor  = keyLight.color.clone();
-  const fromKeyInt    = keyLight.intensity;
-  const fromKeyPos    = keyLight.position.clone();
-  const fromFillColor = fillLight.color.clone();
-  const fromFillInt   = fillLight.intensity;
-  const fromRimColor  = rimLight.color.clone();
-  const fromRimInt    = rimLight.intensity;
+  const fromSpotColor = spotLight.color.clone();
+  const fromSpotInt   = spotLight.intensity;
+  const fromSpotPos   = spotLight.position.clone();
+  const fromAmbColor  = ambientLight.color.clone();
+  const fromAmbInt    = ambientLight.intensity;
   const fromFogColor  = scene.fog.color.clone();
 
-  const toKeyColor  = new THREE.Color(preset.key);
-  const toKeyPos    = new THREE.Vector3(...preset.keyPos);
-  const toFillColor = new THREE.Color(preset.fill);
-  const toRimColor  = new THREE.Color(preset.rim);
+  const toSpotColor = new THREE.Color(preset.spot);
+  const toSpotPos   = new THREE.Vector3(...preset.spotPos);
+  const toAmbColor  = new THREE.Color(preset.ambient);
   const toFogColor  = new THREE.Color(preset.fog);
 
   const newCover  = ORBIT_PROJECTS[idx]?.coverImage || null;
@@ -500,19 +507,20 @@ export function setProject(idx) {
       voxelMesh.material.map = info.texture;
       voxelMesh.material.needsUpdate = true;
     });
+    _buildColorSampler(newCover).then((s) => {                       // retint torch to new cover
+      _torchTint.setRGB(s.dominant.r, s.dominant.g, s.dominant.b, THREE.SRGBColorSpace);
+    });
   }
 
   function _interpolate() {
     const t    = Math.min((performance.now() - startTime) / duration, 1.0);
     const ease = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
 
-    keyLight.color.lerpColors(fromKeyColor, toKeyColor, ease);
-    keyLight.intensity = fromKeyInt + (preset.keyInt - fromKeyInt) * ease;
-    keyLight.position.lerpVectors(fromKeyPos, toKeyPos, ease);
-    fillLight.color.lerpColors(fromFillColor, toFillColor, ease);
-    fillLight.intensity = fromFillInt + (preset.fillInt - fromFillInt) * ease;
-    rimLight.color.lerpColors(fromRimColor, toRimColor, ease);
-    rimLight.intensity = fromRimInt + (preset.rimInt - fromRimInt) * ease;
+    spotLight.color.lerpColors(fromSpotColor, toSpotColor, ease);
+    spotLight.intensity = fromSpotInt + (preset.spotInt - fromSpotInt) * ease;
+    spotLight.position.lerpVectors(fromSpotPos, toSpotPos, ease);
+    ambientLight.color.lerpColors(fromAmbColor, toAmbColor, ease);
+    ambientLight.intensity = fromAmbInt + (preset.ambientInt - fromAmbInt) * ease;
     scene.fog.color.lerpColors(fromFogColor, toFogColor, ease);
     renderer.setClearColor(scene.fog.color);
 
@@ -565,7 +573,7 @@ function _patchCube(material) {
       uIdleFloor: { value: IDLE_FLOOR },
       uSatFar:    { value: 0.15 },
       uConFar:    { value: 0.70 },
-      uBrightFar: { value: 0.55 },
+      uBrightFar: { value: 0.85 }, // softened: the spot now supplies the centre→edge falloff
       uFog:       { value: new THREE.Color(0x0a0e1a) },
       uFogAmt:    { value: 0.6 },
       // D2 — motion / zones / pull
@@ -681,14 +689,32 @@ function _hash(x, y, z) {
   return s - Math.floor(s);
 }
 
+// Saturation-weighted dominant colour of the cover (sRGB 0–1), normalised to full
+// brightness so it reads as a vivid hue (the dark background contributes ~nothing, the
+// vivid accent wins — e.g. GEMx's emerald). intensity stays controlled by TORCH_INT.
+function _dominantOf(px) {
+  let wr = 0, wg = 0, wb = 0, wsum = 0;
+  for (let i = 0; i < px.length; i += 4) {
+    const r = px[i] / 255, g = px[i + 1] / 255, b = px[i + 2] / 255;
+    const max = Math.max(r, g, b), sat = max - Math.min(r, g, b);
+    const w = sat * sat * max; // favour vivid + bright pixels
+    wr += r * w; wg += g * w; wb += b * w; wsum += w;
+  }
+  if (wsum < 1e-4) return { r: 0.5, g: 0.55, b: 0.62 }; // near-greyscale cover → neutral
+  const m = Math.max(wr, wg, wb, 1e-4);
+  return { r: wr / m, g: wg / m, b: wb / m };
+}
+
 // Sample the cover image colour at a face UV. Returns (u,v) → {r,g,b,lum} (0–1) over
-// the cover-fit face; falls back to a neutral glass tint when there's no cover.
+// the cover-fit face, with a `.dominant` {r,g,b} property for the torch tint; falls back
+// to a neutral glass tint when there's no cover.
 async function _buildColorSampler(cover) {
   const NEUTRAL = { r: 0.10, g: 0.12, b: 0.18, lum: 0.12 };
-  if (!cover) return () => NEUTRAL;
+  const _neutral = () => NEUTRAL; _neutral.dominant = { r: 0.5, g: 0.55, b: 0.62 };
+  if (!cover) return _neutral;
   let img;
   try { img = new Image(); img.src = cover; await img.decode(); }
-  catch { return () => NEUTRAL; }
+  catch { return _neutral; }
 
   // ~face resolution (40×24) — the reconstruction is inherently a coarse mosaic.
   const cw = 160, ch = Math.max(1, Math.round(cw / _cardFaceAspect));
@@ -704,13 +730,15 @@ async function _buildColorSampler(cover) {
   ctx.drawImage(img, sx, sy, sw, sh, 0, 0, cw, ch);
   const px = ctx.getImageData(0, 0, cw, ch).data;
 
-  return (u, v) => {
+  const sampler = (u, v) => {
     const x = Math.min(cw - 1, Math.max(0, Math.floor(u * cw)));
     const y = Math.min(ch - 1, Math.max(0, Math.floor((1 - v) * ch))); // flip v → image top
     const o = (y * cw + x) * 4;
     const r = px[o] / 255, g = px[o + 1] / 255, b = px[o + 2] / 255;
     return { r, g, b, lum: 0.2126 * r + 0.7152 * g + 0.0722 * b };
   };
+  sampler.dominant = _dominantOf(px);
+  return sampler;
 }
 
 // Soft radial gradient used as the luminous core behind the card.
