@@ -14,6 +14,7 @@ export const PROJECTS = [
     accentTag: 'Enterprise',
     heroInOrbit: true,
     atmosphereColor: '#08080f',
+    envAccent: '#7fa0ff',     // environment tint (ground/clouds/haze/glow)
     shaderType: 'token-grid',
     coverImage: '/assets/projects/keploy.png',
     caseStudy: {
@@ -39,6 +40,7 @@ export const PROJECTS = [
     accentTag: 'WebGL',
     heroInOrbit: true,
     atmosphereColor: '#0f0505',
+    envAccent: '#aabbff',
     shaderType: 'particles',
     coverImage: null,
     caseStudy: {
@@ -64,6 +66,7 @@ export const PROJECTS = [
     accentTag: 'Freelance',
     heroInOrbit: true,
     atmosphereColor: '#04090a',
+    envAccent: '#55ddaa',
     shaderType: 'flow-field',
     coverImage: null,
     caseStudy: {
@@ -89,6 +92,7 @@ export const PROJECTS = [
     accentTag: 'Enterprise',
     heroInOrbit: true,
     atmosphereColor: '#04070f',
+    envAccent: '#5577cc',
     shaderType: 'data-stream',
     coverImage: null,
     caseStudy: null
@@ -108,6 +112,7 @@ export const PROJECTS = [
     accentTag: 'Experiment',
     heroInOrbit: true,
     atmosphereColor: '#0d0a03',
+    envAccent: '#ffaa44',
     shaderType: 'growth',
     coverImage: null,
     caseStudy: null

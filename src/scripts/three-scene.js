@@ -8,6 +8,8 @@ import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { EffectComposer, RenderPass, EffectPass, BloomEffect, VignetteEffect, ChromaticAberrationEffect, DepthOfFieldEffect } from 'postprocessing';
 import { ORBIT_PROJECTS } from '../data/projects.js';
+import { initEnvironment } from './environment.js';
+import { initCloudLayer } from './cloud-layer.js';
 
 // ── Module state ──────────────────────────────────────────────────────────────
 
@@ -15,6 +17,11 @@ let renderer, composer, scene, camera, rafId, bloomEffect;
 let cardGroup  = null;   // holds the voxel field; gets float + mouse tilt
 let voxelMesh  = null;   // THREE.InstancedMesh — the card itself
 let glowPlane  = null;
+let _env       = null;   // hero atmosphere (ground / haze / clouds / glow) — disabled this pass
+let _cloud     = null;   // composition-validation cloud layer (3 still planes)
+
+// Per-project environment accent (drives ground/clouds/haze/glow tint).
+const _accentFor = (idx) => ORBIT_PROJECTS[idx]?.envAccent || '#7fa0ff';
 let isMobile   = false;
 
 let _cardFaceAspect = 16 / 10;
@@ -25,6 +32,8 @@ let _N        = 0;
 let _curPos   = null;  // base cube position (matrix written once; shader animates on top)
 let _scaleArr = null;  // per-instance uniform scale
 let _vox      = null;  // per-cube (depthNorm, rand, lum) → D2 motion/visibility
+let _revealArr  = null;  // per-cube eased reveal 0→1 (asymmetric attack/release → smooth fade-out)
+let _revealAttr = null;  // InstancedBufferAttribute wrapping _revealArr (uploaded per frame)
 const _m4 = new THREE.Matrix4();
 const _v3 = new THREE.Vector3();
 const _sv = new THREE.Vector3();
@@ -48,8 +57,8 @@ let _coverTex = null;                 // current cover as a THREE.Texture (C2 ma
 // ── Cursor reveal (D1) ───────────────────────────────────────────────────────
 // Per-cube reveal from cursor distance: idle = soft atmospheric ghost, near cursor
 // = sharp readable image tiles. Driven in the shader; cursor projected to card-local.
-const REVEAL_RADIUS = 2.5;  // local units (card face ~4 × 2.48)
-const IDLE_FLOOR    = 0.30; // baseline exposure away from the cursor (~30% ghost)
+const REVEAL_RADIUS = 1.3;  // local units (card face ~4 × 2.48) — tighter hover pool
+const IDLE_FLOOR    = 1.0;  // full exposure everywhere — image stays sharp without hover
 let _revealU = null;        // shader.uniforms ref (uCursor / uHover updated per frame)
 const _cursor = new THREE.Vector2(0, 0);  // smoothed cursor in card-local face coords
 let _hover = 0;                           // 0→1 presence (fades when leaving the card)
@@ -149,8 +158,9 @@ export function initScene(canvas) {
   });
 
   camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 100);
-  camera.position.set(1.0, 1.8, 6.5);
-  camera.lookAt(0, 0, 0);
+  // Head-on with the card centre (cardGroup sits at y 0.3) so the face is square to camera.
+  camera.position.set(0, 0.3, 6.5);
+  camera.lookAt(0, 0.3, 0);
 
   // Post-processing — bloom + vignette, plus DOF + chromatic aberration (cinematic).
   bloomEffect = new BloomEffect({ intensity: 0.85, luminanceThreshold: 0.55, luminanceSmoothing: 0.7, mipmapBlur: true, radius: 0.6 });
@@ -195,6 +205,13 @@ export function initScene(canvas) {
 
   scene.fog = new THREE.FogExp2(p0.fog, p0.fogDensity);
   renderer.setClearColor(p0.fog);
+
+  // Hero atmosphere around the card (reflective ground, haze, ceiling clouds, glow).
+  // Disabled for the cloud composition-validation pass — re-enable later.
+  // _env = initEnvironment({ scene, renderer, camera, isMobile, accent: _accentFor(0) });
+
+  // Cloud layer — 3 still planes above/behind the card (validation pass).
+  _cloud = initCloudLayer({ scene, camera, isMobile, accent: _accentFor(0) });
 
   _buildVoxelCard(); // async — fetches cube_positions.json then builds the InstancedMesh
 
@@ -250,6 +267,8 @@ export function initScene(canvas) {
 
     _updateReveal();
     if (_revealU) _revealU.uTime.value = prefersReduced ? 0 : t;
+    if (_env) _env.update(prefersReduced ? 0 : t);
+    if (_cloud) _cloud.update(prefersReduced ? 0 : t);
 
     composer.render();
   }
@@ -293,6 +312,7 @@ async function _buildVoxelCard() {
   _scaleArr = new Float32Array(N);
   _uvOffset = new Float32Array(N * 2);
   _vox      = new Float32Array(N * 3); // per-cube (depthNorm, rand, lum) for D2 motion/visibility
+  _revealArr = new Float32Array(N);    // eased per-cube reveal (starts hidden)
 
   // C2: each cube maps its own UV window of the shared cover texture (image fragments).
   const cover  = ORBIT_PROJECTS[currentIdx]?.coverImage || null;
@@ -340,6 +360,9 @@ async function _buildVoxelCard() {
   const geo = new THREE.BoxGeometry(cube, cube, cube);
   geo.setAttribute('aUvOffset', new THREE.InstancedBufferAttribute(_uvOffset, 2));
   geo.setAttribute('aVox', new THREE.InstancedBufferAttribute(_vox, 3));
+  _revealAttr = new THREE.InstancedBufferAttribute(_revealArr, 1);
+  _revealAttr.setUsage(THREE.DynamicDrawUsage);
+  geo.setAttribute('aReveal', _revealAttr);
 
   voxelMesh = new THREE.InstancedMesh(geo, _makeCubeMaterial(), N);
   voxelMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -347,7 +370,7 @@ async function _buildVoxelCard() {
   _writeAllMatrices();
 
   cardGroup = new THREE.Group();
-  cardGroup.position.set(0, 0.3, 0);
+  cardGroup.position.set(0, 0.3, -0.6); // pushed back from camera (+Z) a touch
   cardGroup.add(voxelMesh);
   scene.add(cardGroup);
 
@@ -370,10 +393,10 @@ async function _buildVoxelCard() {
 // C2 cube material: unlit, maps the shared cover via a per-cube UV window, with the
 // cursor-reveal grade + alphaHash dissolve patched into the shader.
 function _makeCubeMaterial() {
-  // Opaque → crisp discrete tiles (no alphaHash grain); depth-sorting handles the
-  // overlapping 3D cloud. Visibility/holes are done by cube scale, not alpha.
+  // Transparent → pulse-area cubes are hidden via per-instance alpha (full size) and
+  // fade in within the cursor pool. depthWrite stays on so the opaque tiles still sort.
   const m = new THREE.MeshBasicMaterial({
-    map: _coverTex, toneMapped: false, side: THREE.FrontSide,
+    map: _coverTex, toneMapped: false, side: THREE.FrontSide, transparent: true,
   });
   _patchCube(m);
   return m;
@@ -408,6 +431,22 @@ function _updateReveal() {
   _hover += (_hoverTarget - _hover) * 0.08;
   _revealU.uCursor.value.copy(_cursor);
   _revealU.uHover.value = _hover;
+
+  // Per-cube reveal easing: fast attack, slow release → cubes linger and fade out
+  // smoothly when the cursor leaves instead of snapping back to hidden.
+  if (_revealArr) {
+    const cx = _cursor.x, cy = _cursor.y, r = REVEAL_RADIUS, h = _hover;
+    for (let i = 0; i < _N; i++) {
+      const dx = _curPos[i * 3]     - cx;
+      const dy = _curPos[i * 3 + 1] - cy;
+      let t = (r - Math.hypot(dx, dy)) / r;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const target = t * t * (3 - 2 * t) * h;     // smoothstep pool × hover presence
+      const cur = _revealArr[i];
+      _revealArr[i] = cur + (target - cur) * (target > cur ? 0.22 : 0.04); // attack vs release
+    }
+    _revealAttr.needsUpdate = true;
+  }
 }
 
 // ── Project switching ─────────────────────────────────────────────────────────
@@ -472,6 +511,10 @@ export function setProject(idx) {
   }
 
   _interpolate();
+  // Environment retints on its own slow, staggered ~5s timeline (separate from the
+  // 800ms light/texture swap above).
+  if (_env) _env.transition(_accentFor(idx));
+  if (_cloud) _cloud.transition(_accentFor(idx));
   _updateProjectUI(idx);
 }
 
@@ -513,9 +556,14 @@ function _patchCube(material) {
       // D2 — motion / zones / pull
       uTime:       { value: 0 },
       uHalfExtent: { value: _halfExtent },
-      uOscSpeed:   { value: 1.3 },
-      uAmpInner:   { value: 0.02 },
-      uAmpOuter:   { value: 0.12 },
+      // radial ripple — concentric wave travelling outward from the card centre
+      uRippleStart: { value: 10.0 }, // dead-zone radius in cubes; ripple begins past this ring
+      uRippleFreq:  { value: 0.55 }, // radians per cube → wavelength (smaller = wider rings)
+      uRippleSpeed: { value: 1.4 },  // outward travel speed (radians/sec)
+      uRippleAmp:   { value: 0.12 }, // base Z amplitude of the wave
+      uRippleGrow:  { value: 0.16 }, // extra amplitude per cube outward (wave swells at edges)
+      uKeepFrac:    { value: 0.2 },  // fraction of cubes kept in the pulse area (rest hidden)
+      uDepthVisFar: { value: 0.5 },  // opacity of the deepest layer (near = 1.0, mid ≈ 0.75)
       uPullXY:     { value: 0.18 },
       uPullZ:      { value: 0.10 },
       uOuterFade:  { value: 0.55 },
@@ -531,14 +579,15 @@ function _patchCube(material) {
 
     shader.vertexShader = shader.vertexShader
       .replace('void main() {', /* glsl */`
-        attribute vec2 aUvOffset; attribute vec3 aVox;
+        attribute vec2 aUvOffset; attribute vec3 aVox; attribute float aReveal;
         uniform vec2 uTileScale; uniform vec2 uCursor; uniform vec2 uHalfExtent;
         uniform float uHover; uniform float uRadius; uniform float uIdleFloor;
-        uniform float uTime; uniform float uOscSpeed; uniform float uAmpInner; uniform float uAmpOuter;
+        uniform float uTime; uniform float uRippleStart; uniform float uRippleFreq; uniform float uRippleSpeed; uniform float uRippleAmp; uniform float uRippleGrow; uniform float uKeepFrac; uniform float uDepthVisFar;
         uniform float uPullXY; uniform float uPullZ;
         uniform float uOuterFade; uniform float uEdgeLayer; uniform float uHoleThresh; uniform float uHoleDepth;
         uniform float uDepthScatter; uniform float uDepthFunnel; uniform float uHideScale;
         varying float vReveal;
+        varying float vAlpha;
         void main() {`)
       .replace('#include <uv_vertex>', /* glsl */`
         #include <uv_vertex>
@@ -553,28 +602,31 @@ function _patchCube(material) {
         float _d    = distance(_ctr.xy, uCursor);
         float _pool = smoothstep(uRadius, 0.0, _d) * uHover;
         vReveal = clamp(uIdleFloor + (1.0 - uIdleFloor) * _pool, 0.0, 1.0);
-        // visibility → cube scale (crisp cull, no alpha): dense core, image in middle layers
-        float _vis  = 1.0 - smoothstep(0.5, 1.0, _r) * uOuterFade;
-        float _mid  = 1.0 - abs(_lay - 0.5) * 2.0;                 // 1 middle layer → 0 front/back
-        _vis *= mix(uEdgeLayer, 1.0, smoothstep(0.0, 1.0, _mid));  // front/back stay translucent
-        float _hole = smoothstep(uHoleThresh, uHoleThresh - 0.06, _rnd) * smoothstep(0.32, 0.62, _r);
-        _vis *= (1.0 - _hole * uHoleDepth);
-        _vis  = mix(_vis, min(_vis + 0.4, 1.0), _pool); // hover tightens / fills holes
-        transformed *= mix(uHideScale, 1.0, smoothstep(0.0, 0.5, _vis)); // scale the cube first
+        // radial distance in cube units (shared by the cull + the ripple below)
+        float _cell      = (2.0 * uHalfExtent.x) / 40.0; // world size of one grid cell
+        float _distCells = length(_ctr.xy) / _cell;
+        // pulse area (beyond the dead zone): keep only ~uKeepFrac of cubes; the rest stay
+        // full size but hidden via opacity (alpha 0) and fade in within the cursor pool.
+        float _cand = step(uRippleStart, _distCells) * step(uKeepFrac, _rnd);
+        // depth fade: cubes deeper in the volume (_lay→0) are more transparent
+        float _depthVis = mix(uDepthVisFar, 1.0, _lay); // near 1.0 · mid ~0.75 · far uDepthVisFar
+        vAlpha = mix(1.0, aReveal, _cand) * _depthVis;  // aReveal eases in/out (smooth fade-out)
         // big static Z scatter → exploded 3D cloud (XY stays = grid, image still reads)
         transformed.z += (_rnd2 - 0.5) * 2.0 * uDepthScatter - (1.0 - _r) * uDepthFunnel;
-        // idle Z oscillation — every layer breathes, outer + back move more, out of phase
-        float _amp = mix(uAmpInner, uAmpOuter, _r) * mix(0.6, 1.0, _lay);
-        transformed.z += sin(uTime * uOscSpeed + _rnd * 6.2831 + _lay * 2.2) * _amp;
-        // soft hover pull toward the cursor (returns as pool fades — no state)
-        transformed.xy += (uCursor - _ctr.xy) * (_pool * uPullXY);
-        transformed.z  += _pool * uPullZ; // ease toward viewer → tile-like`);
+        // radial ripple — one concentric wave spreading outward from centre.
+        // dead zone: cubes within uRippleStart cells of centre stay flat; the wave
+        // ramps in over the next few rings so the boundary isn't a hard edge.
+        float _ring      = smoothstep(uRippleStart, uRippleStart + 4.0, _distCells);
+        // amplitude swells the further out the wave travels
+        float _amp       = uRippleAmp * (1.0 + max(_distCells - uRippleStart, 0.0) * uRippleGrow);
+        transformed.z += sin(_distCells * uRippleFreq - uTime * uRippleSpeed) * _amp * _ring;`);
 
     shader.fragmentShader = shader.fragmentShader
       .replace('void main() {', /* glsl */`
         uniform float uSatFar; uniform float uConFar; uniform float uBrightFar;
         uniform vec3 uFog; uniform float uFogAmt;
         varying float vReveal;
+        varying float vAlpha;
         void main() {`)
       .replace('#include <map_fragment>', /* glsl */`
         #include <map_fragment>
@@ -584,7 +636,9 @@ function _patchCube(material) {
         _c = (_c - 0.5) * mix(uConFar, 1.0, vReveal) + 0.5;         // soften contrast
         _c *= mix(uBrightFar, 1.0, vReveal);                       // dim when far
         _c = mix(_c, uFog, (1.0 - vReveal) * uFogAmt);             // cool atmospheric tint
-        diffuseColor.rgb = _c;`);
+        diffuseColor.rgb = _c;
+        diffuseColor.a *= vAlpha;            // pulse-area cubes fade in/out via opacity
+        if (diffuseColor.a < 0.02) discard;  // fully-hidden cubes write no depth`);
   };
   material.customProgramCacheKey = () => 'voxel-cube-reveal';
 }
@@ -696,6 +750,10 @@ function _updateProjectUI(idx) {
 
 export function destroy() {
   cancelAnimationFrame(rafId);
+  _env?.destroy();
+  _env = null;
+  _cloud?.destroy();
+  _cloud = null;
   window.removeEventListener('resize',    _handlers.resize);
   window.removeEventListener('mousemove', _handlers.mousemove);
   window.removeEventListener('keydown',   _handlers.keydown);
@@ -712,6 +770,6 @@ export function destroy() {
   });
   composer?.dispose();
   renderer?.dispose();
-  _curPos = _scaleArr = _uvOffset = _vox = null;
+  _curPos = _scaleArr = _uvOffset = _vox = _revealArr = _revealAttr = null;
   renderer = composer = scene = camera = cardGroup = voxelMesh = glowPlane = _coverTex = _revealU = null;
 }
