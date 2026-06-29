@@ -11,15 +11,28 @@ import * as THREE from 'three';
 
 const CLOUD_VERT = /* glsl */`
   varying vec2 vUv;
-  void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
+  varying vec3 vWorldPos;
+  void main(){
+    vUv = uv;
+    vec4 wp = modelMatrix * vec4(position, 1.0);
+    vWorldPos = wp.xyz;
+    gl_Position = projectionMatrix * viewMatrix * wp;
+  }`;
 
 // Edge-feathered, accent-tinted cloud with in-shader drift + rotation + slow breathing.
 const CLOUD_FRAG = /* glsl */`
   uniform sampler2D uMap;
   uniform vec3  uAccent;
-  uniform float uTime, uOpacity, uRot, uPhase, uCross;
+  uniform float uTime, uOpacity, uRot, uPhase, uCross, uContrast;
   uniform vec2  uDrift;
+  // fake scene lighting (manual fog illumination — see initCloudLayer)
+  uniform vec3  uSpotPos, uSpotColor;     uniform float uSpotInt;
+  uniform vec3  uCornerPos, uCornerColor; uniform float uCornerInt;
+  uniform vec3  uSunColor;                uniform float uSunInt;
+  uniform vec3  uHemiSky, uHemiGround;    uniform float uHemiInt;
+  uniform float uLightGain, uLightFalloff, uAmbientFloor;
   varying vec2  vUv;
+  varying vec3  vWorldPos;
 
   void main(){
     // sampling UV: rotate about centre, then drift — both extremely slow
@@ -35,9 +48,23 @@ const CLOUD_FRAG = /* glsl */`
     // slow opacity breathing (the "crossfade" between the three layers)
     float cross = 0.6 + 0.4 * sin(uTime * uCross + uPhase);
 
-    float alpha = tex.a * feather * uOpacity * cross;
-    // tint toward the accent, lifted at the bright cores so they feed bloom
-    vec3 rgb = tex.rgb * uAccent * (0.6 + tex.a * 0.8);
+    // The cloud PNGs are fully opaque (alpha=255); the shape lives in RGB. Derive density
+    // from luminance so the structure drives occlusion: bright = dense fog, dark = gap.
+    // uContrast crushes the wide mid-band toward gaps → punchier, more defined billows.
+    float dens = dot(tex.rgb, vec3(0.299, 0.587, 0.114));
+    dens = pow(dens, uContrast);
+    float alpha = dens * feather * uOpacity * cross;
+
+    // fake fog illumination: positional scatter from the two spots (distance falloff,
+    // tinted by light colour) + flat ambient from hemisphere & sun, over an accent floor.
+    vec3 albedo = tex.rgb * (0.6 + dens * 0.8);
+    float dS = distance(vWorldPos, uSpotPos);
+    float dC = distance(vWorldPos, uCornerPos);
+    vec3 scatter = uSpotColor   * (uSpotInt   / (1.0 + uLightFalloff * dS * dS))
+                 + uCornerColor * (uCornerInt / (1.0 + uLightFalloff * dC * dC));
+    vec3 ambient = mix(uHemiGround, uHemiSky, 0.5) * uHemiInt + uSunColor * uSunInt;
+    vec3 illum   = uAmbientFloor * uAccent + ambient + scatter * uLightGain;
+    vec3 rgb     = albedo * illum;
 
     gl_FragColor = vec4(rgb, alpha);
   }`;
@@ -47,16 +74,23 @@ const CLOUD_FRAG = /* glsl */`
 // background air. Flip these and reload to A/B (no screenshots captured by tooling).
 const FG_ENABLED = true;       // foreground layer on/off
 const FG_BLEND   = 'normal';   // 'normal' | 'additive'  (test both)
-const FG_OPACITY = 0.02;       // 0.01–0.03 range — drop toward 0.01 if it reads as a texture
+const FG_OPACITY = 0.04;       // 0.01–0.05 range — drop toward 0.01 if it reads as a texture
+const CLOUD_CONTRAST = 0.8;    // density gamma: <1 lifts mid-tones (more fog); >1 crisps gaps
+
+// Fake scene lighting on the clouds (manual fog illumination — tune to taste).
+const CLOUD_LIGHT_GAIN    = 0.025; // positional spot/corner contribution strength
+const CLOUD_LIGHT_FALLOFF = 0.05;  // 1 / (1 + falloff·d²) distance falloff
+const CLOUD_AMBIENT_FLOOR = 0.35;  // base accent fill so clouds stay visible where unlit
 
 // plane config: texture, size, position, base tilt, drift(vec2), rotation rate, breathe phase, ω
 const PLANES = [
-  { tex: '/assets/clouds/cloudA.png', size: 48, pos: [-1, 6.5, -5], tilt: -0.34, drift: [ 0.0020,  0.0011], rot:  0.0040, phase: 0.0, cross: 0.060, opacity: 0.11 },
-  { tex: '/assets/clouds/cloudB.png', size: 62, pos: [ 1, 8.0, -7], tilt: -0.30, drift: [-0.0013,  0.0008], rot: -0.0026, phase: 2.1, cross: 0.045, opacity: 0.09 },
-  { tex: '/assets/clouds/cloudC.png', size: 78, pos: [-2, 9.5, -9], tilt: -0.28, drift: [ 0.0008, -0.0006], rot:  0.0015, phase: 4.0, cross: 0.035, opacity: 0.07 },
+  { tex: '/assets/clouds/cloudA.png', size: 48, pos: [-1, 3.5, -4], tilt: -0.18, drift: [ 0.0020,  0.0011], rot:  0.0040, phase: 0.0, cross: 0.060, opacity: 0.70 },
+  { tex: '/assets/clouds/cloudB.png', size: 62, pos: [ 1, 5.0, -6], tilt: -0.16, drift: [-0.0013,  0.0008], rot: -0.0026, phase: 2.1, cross: 0.045, opacity: 0.60 },
+  { tex: '/assets/clouds/cloudC.png', size: 78, pos: [-2, 6.5, -8], tilt: -0.14, drift: [ 0.0008, -0.0006], rot:  0.0015, phase: 4.0, cross: 0.035, opacity: 0.50 },
 ];
 
-export function initCloudLayer({ scene, camera, isMobile, accent }) {
+export function initCloudLayer({ scene, camera, isMobile, accent, lights }) {
+  const { spotLight, cornerLight, sunLight, hemiLight } = lights || {};
   const accentColor = new THREE.Color(accent || '#7fa0ff'); // shared, lerped on transition
   const group = new THREE.Group();
   group.name = 'hero-cloud-layer';
@@ -66,6 +100,17 @@ export function initCloudLayer({ scene, camera, isMobile, accent }) {
   const materials = [];
   const _disposables = [];
   const textures = [];
+
+  // Fake-light uniforms (one fresh set per material; synced from the live scene lights each frame).
+  const lightUniforms = () => ({
+    uSpotPos:    { value: new THREE.Vector3() }, uSpotColor:   { value: new THREE.Color(0, 0, 0) }, uSpotInt:   { value: 0 },
+    uCornerPos:  { value: new THREE.Vector3() }, uCornerColor: { value: new THREE.Color(0, 0, 0) }, uCornerInt: { value: 0 },
+    uSunColor:   { value: new THREE.Color(0, 0, 0) }, uSunInt:  { value: 0 },
+    uHemiSky:    { value: new THREE.Color(0, 0, 0) }, uHemiGround: { value: new THREE.Color(0, 0, 0) }, uHemiInt: { value: 0 },
+    uLightGain:    { value: CLOUD_LIGHT_GAIN },
+    uLightFalloff: { value: CLOUD_LIGHT_FALLOFF },
+    uAmbientFloor: { value: CLOUD_AMBIENT_FLOOR },
+  });
 
   PLANES.forEach((cfg, i) => {
     const tex = loader.load(cfg.tex);
@@ -77,7 +122,7 @@ export function initCloudLayer({ scene, camera, isMobile, accent }) {
     const mat = new THREE.ShaderMaterial({
       transparent: true,
       depthWrite: false,
-      blending: THREE.AdditiveBlending,
+      blending: THREE.NormalBlending, // occluding fog: billows cover/dim the bright source behind
       vertexShader: CLOUD_VERT,
       fragmentShader: CLOUD_FRAG,
       uniforms: {
@@ -89,6 +134,8 @@ export function initCloudLayer({ scene, camera, isMobile, accent }) {
         uRot:     { value: cfg.rot },
         uPhase:   { value: cfg.phase },
         uCross:   { value: cfg.cross },
+        uContrast:{ value: CLOUD_CONTRAST },
+        ...lightUniforms(),
       },
     });
     _disposables.push(mat);
@@ -99,7 +146,7 @@ export function initCloudLayer({ scene, camera, isMobile, accent }) {
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(cfg.pos[0], cfg.pos[1], cfg.pos[2]);
     mesh.rotation.x = cfg.tilt * Math.PI;     // tilt to face the camera below
-    mesh.renderOrder = -10 + i;               // behind the card, back-to-front among themselves
+    mesh.renderOrder = -8 - i;                // normal blend: farthest (cloudC) draws first → back-to-front
     group.add(mesh);
   });
 
@@ -120,6 +167,8 @@ export function initCloudLayer({ scene, camera, isMobile, accent }) {
         uRot:     { value: 0.0008 },
         uPhase:   { value: 1.0 },
         uCross:   { value: 0.03 },
+        uContrast:{ value: CLOUD_CONTRAST },
+        ...lightUniforms(),
       },
     });
     _disposables.push(fgMat);
@@ -138,6 +187,14 @@ export function initCloudLayer({ scene, camera, isMobile, accent }) {
   const _from = accentColor.clone(), _to = accentColor.clone();
   const DUR = 4.0;
 
+  // Copy the live scene-light state into a material's fake-light uniforms.
+  const syncLights = (u) => {
+    if (spotLight)   { u.uSpotPos.value.copy(spotLight.position);     u.uSpotColor.value.copy(spotLight.color);     u.uSpotInt.value   = spotLight.intensity; }
+    if (cornerLight) { u.uCornerPos.value.copy(cornerLight.position); u.uCornerColor.value.copy(cornerLight.color); u.uCornerInt.value = cornerLight.intensity; }
+    if (sunLight)    { u.uSunColor.value.copy(sunLight.color);        u.uSunInt.value  = sunLight.intensity; }
+    if (hemiLight)   { u.uHemiSky.value.copy(hemiLight.color);        u.uHemiGround.value.copy(hemiLight.groundColor); u.uHemiInt.value = hemiLight.intensity; }
+  };
+
   function update(time) {
     _t = time;
     if (transStart >= 0) {
@@ -145,7 +202,7 @@ export function initCloudLayer({ scene, camera, isMobile, accent }) {
       accentColor.lerpColors(_from, _to, p * p * (3.0 - 2.0 * p));
       if (p >= 1) transStart = -1;
     }
-    for (const m of materials) m.uniforms.uTime.value = time;
+    for (const m of materials) { m.uniforms.uTime.value = time; syncLights(m.uniforms); }
   }
 
   function transition(toHex) {

@@ -9,10 +9,12 @@
     "astro": "astro"
   },
   "dependencies": {
+    "@alienkitty/alien.js": "^1.2.0",
     "@studio-freight/lenis": "^1.0.42",
     "astro": "^4.16.18",
     "gsap": "^3.12.5",
     "howler": "^2.2.4",
+    "lil-gui": "^0.21.0",
     "postprocessing": "^6.39.1",
     "three": "^0.170.0"
   },
