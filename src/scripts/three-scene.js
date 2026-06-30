@@ -13,6 +13,7 @@ import { initReflectiveFloor } from './reflective-floor.js';
 import { Wobble } from '@alienkitty/alien.js/src/three/utils/Wobble.js';
 import { Flowmap } from '@alienkitty/alien.js/src/three/utils/Flowmap.js';
 import { initMistFront } from './mist-front.js';
+import { initProjector } from './spot-projector.js';
 
 // Sky source: 'exr' = sky_env.exr (72 MB, static) · 'dome' = procedural animated dome (no asset).
 const SKY_MODE = 'dome';
@@ -39,6 +40,7 @@ let _flowmap   = null;   // alien.js Flowmap — cursor velocity → UV distorti
 let _godRays   = null;   // procedural god-ray plane behind the card (additive)
 const _prevFlowMouse = new THREE.Vector2(); // tracks last flowmap mouse for velocity delta
 let _mistFront = null;   // foreground fog drifting in front of the card
+let _projector = null;   // cursor-driven spotlight projecting the cover image onto the card
 
 // Per-project environment accent (drives ground/clouds/haze/glow tint).
 const _accentFor = (idx) => ORBIT_PROJECTS[idx]?.envAccent || '#7fa0ff';
@@ -169,7 +171,7 @@ export function initScene(canvas) {
   // reads as atmosphere, while environmentIntensity drives the lighting independently.
   scene.backgroundBlurriness = 0.35;
   scene.backgroundIntensity  = 0.5;
-  scene.environmentIntensity = 1.0;
+  scene.environmentIntensity = 0.05;
 
   if (SKY_MODE === 'exr') {
     // Environment map (IBL) from the sky EXR — image-based lighting + visible sky.
@@ -258,10 +260,14 @@ export function initScene(canvas) {
   _mistFront = initMistFront({ accent: _accentFor(0) });
   scene.add(_mistFront.mesh);
 
+  // Cursor-driven projector — casts the cover image onto the card (reverse parallax).
+  _projector = initProjector({ scene });
+  _projector.setImage(ORBIT_PROJECTS[currentIdx]?.coverImage || null);
+
   // Dev-only scene/env controls — lazy-loaded so the GUI never ships to normal visitors.
   if (import.meta.env.DEV || location.search.includes('lights')) {
     import('./scene-gui.js').then(({ initSceneGui }) => {
-      _gui = initSceneGui({ scene, renderer, bloomEffect, floor: _floor });
+      _gui = initSceneGui({ scene, renderer, bloomEffect, floor: _floor, projector: _projector });
     });
   }
 
@@ -348,6 +354,8 @@ export function initScene(canvas) {
     if (_floor) _floor.update(prefersReduced ? 0 : t);
     if (_godRays) _godRays.update(prefersReduced ? 0 : t);
     if (_mistFront) _mistFront.update(prefersReduced ? 0 : t);
+    if (_projector) _projector.update(mouse.x, mouse.y);
+    if (_gui && _revealU) _gui.addCubeControls(_revealU); // idempotent — attaches once shader is live
 
     composer.render();
   }
@@ -495,7 +503,8 @@ function _makeCubeMaterial() {
   // haze (swap to AdditiveBlending for a glowing core).
   const m = new THREE.MeshStandardMaterial({
     map: _coverTex, side: THREE.FrontSide,
-    roughness: 0.5, metalness: 0.0, envMapIntensity: 1.0, // lit by scene.environment (sky EXR IBL)
+    color: 0x0b0b0b,                                     // dark base so the projector is the key light
+    roughness: 0.55, metalness: 0.0, envMapIntensity: 0.22, // dim IBL → image keeps its contrast
     transparent: true, depthWrite: false, blending: THREE.NormalBlending,
   });
   _patchCube(m);
@@ -587,6 +596,7 @@ export function setProject(idx) {
       voxelMesh.material.needsUpdate = true;
     });
   }
+  if (_projector) _projector.setImage(newCover);
 
   function _interpolate() {
     const t    = Math.min((performance.now() - startTime) / duration, 1.0);
@@ -639,7 +649,7 @@ function _patchCube(material) {
     Object.assign(shader.uniforms, {
       uTileScale: { value: _uvScale },
       uUvOrigin:   { value: _uvOrigin }, // (offU,offV) cover-fit origin for live-position UV
-      uDriftAmt:   { value: 0.12 },      // XY drift magnitude (world units, ~a few cells)
+      uDriftAmt:   { value: 0.0 },       // XY drift disabled (was 0.12)
       uDriftSpeed: { value: 0.4 },       // drift wander speed
       uCursor:    { value: _cursor },
       uHover:     { value: _hover },
@@ -670,6 +680,11 @@ function _patchCube(material) {
       uDepthScatter: { value: 0.08 }, // per-cube Z spread → 3D cloud (compressed)
       uDepthFunnel:  { value: 0.06 }, // push the centre back into a tunnel
       uHideScale:    { value: 0.0 },  // hidden cubes shrink to this (crisp cull)
+      // idle opacity classes (keyed off per-cube hash aVox.y, uniform in [0,1])
+      uTranspFrac:  { value: 0.18 },  uTranspAlpha: { value: 0.35 }, // "transparent" cubes
+      uTransFrac:   { value: 0.28 },  uTransAlpha:  { value: 0.55 }, // translucent (a bit higher)
+      uFrostFrac:   { value: 0.16 },  uFrostAlpha:  { value: 0.60 }, // frosted (rough + milky)
+      uFrostRough:  { value: 0.5 },   // extra roughness added to frosted cubes
       // cursor bump — height scale; the bell + easing is computed CPU-side into aBump
       uBumpAmp:    { value: BUMP_AMP },
       // fluid warp — gravity well + vortex + ring waves on hover
@@ -680,6 +695,10 @@ function _patchCube(material) {
       // flowmap — cursor velocity → image UV distortion (image "pours" on drag)
       uFlowmap:     _flowmap ? _flowmap.uniform : { value: null },
       uFlowStrength: { value: 0.07 }, // UV slide magnitude (subtle but readable)
+      // static per-cube Perlin grain — spatially-coherent surface variation (brightness + roughness)
+      uGrainScale: { value: 1.6 },   // noise frequency across the card face
+      uGrainAmt:   { value: 0.16 },  // brightness variation (± fraction)
+      uGrainRough: { value: 0.30 },  // roughness variation (± absolute)
     });
     _revealU = shader.uniforms;
 
@@ -692,12 +711,20 @@ function _patchCube(material) {
         uniform float uPullXY; uniform float uPullZ;
         uniform float uOuterFade; uniform float uEdgeLayer; uniform float uHoleThresh; uniform float uHoleDepth;
         uniform float uDepthScatter; uniform float uDepthFunnel; uniform float uHideScale;
+        uniform float uTranspFrac; uniform float uTranspAlpha; uniform float uTransFrac; uniform float uTransAlpha;
+        uniform float uFrostFrac; uniform float uFrostAlpha;
         uniform float uBumpAmp;
         uniform float uWarpRadius; uniform float uLensAmp; uniform float uWaveAmp; uniform float uWaveSpeed;
+        uniform float uGrainScale;
         varying float vReveal;
         varying float vAlpha;
         varying float vWarpPool;
+        varying float vGrain;
+        varying float vFrost;
         varying vec2 vFaceUv;
+        float _gh(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+        float _gn(vec2 p){ vec2 i = floor(p), f = fract(p); float a=_gh(i),b=_gh(i+vec2(1,0)),c=_gh(i+vec2(0,1)),d=_gh(i+vec2(1,1)); vec2 u=f*f*(3.0-2.0*f); return mix(mix(a,b,u.x),mix(c,d,u.x),u.y); }
+        float _gf(vec2 p){ float v=0.0, a=0.5; for(int i=0;i<4;i++){ v+=a*_gn(p); p*=1.9; a*=0.5; } return v; }
         void main() {`)
       .replace('#include <uv_vertex>', /* glsl */`
         #include <uv_vertex>
@@ -722,7 +749,16 @@ function _patchCube(material) {
         float _keepProb = mix(1.0, uKeepFrac, smoothstep(uDenseRadius, uFadeRadius, _distCells));
         float _cand   = step(_keepProb, aColRand);
         float _hidden = _cand * (1.0 - aReveal);
-        vAlpha = _depthVis * (1.0 - _hidden);
+        // idle material classes by per-cube hash: transparent · translucent · frosted · normal
+        float _opCls = 1.0; vFrost = 0.0;
+        float _t1 = uTranspFrac, _t2 = _t1 + uTransFrac, _t3 = _t2 + uFrostFrac;
+        if      (aVox.y < _t1) _opCls = uTranspAlpha;
+        else if (aVox.y < _t2) _opCls = uTransAlpha;
+        else if (aVox.y < _t3) { _opCls = uFrostAlpha; vFrost = 1.0; }
+        // under the cursor pool, restore class cubes to normal (opaque, un-frosted)
+        _opCls  = mix(_opCls, 1.0, _pool);
+        vFrost *= (1.0 - _pool);
+        vAlpha = _depthVis * (1.0 - _hidden) * _opCls;
         // motion fades in by radius: still/flat dense centre, animated cloud toward edges.
         // (drift + scatter + ripple all multiply by _move, so this gates them together.)
         float _move = (1.0 - aReveal) * smoothstep(uDenseRadius, uFadeRadius, _distCells);
@@ -756,6 +792,7 @@ function _patchCube(material) {
         transformed.z += uWaveAmp * _wave * clamp(_warpPool * 2.0, 0.0, 1.0);
         vWarpPool = _warpPool;
         vFaceUv = _ctr.xy / (2.0 * uHalfExtent) + 0.5; // 0-1 card-face position (matches flowmap space)
+        vGrain = _gf(_ctr.xy * uGrainScale + 11.3);    // static per-cube Perlin grain (no uTime)
         // live-position UV: sample the cover under the cube's CURRENT location, continuously
         // (no grid quantization) so a drifting cube's fragment slides smoothly — no pop.
         // Resolves to the correct image when collapsed (drift = 0) → crisp on hover.
@@ -765,14 +802,20 @@ function _patchCube(material) {
         vMapUv = _win + uv * uTileScale;`);
 
     shader.fragmentShader = shader.fragmentShader
+      .replace('#include <roughnessmap_fragment>', /* glsl */`
+        #include <roughnessmap_fragment>
+        roughnessFactor = clamp(roughnessFactor + (vGrain - 0.5) * uGrainRough + vFrost * uFrostRough, 0.04, 1.0);`)
       .replace('void main() {', /* glsl */`
         uniform float uSatFar; uniform float uConFar; uniform float uBrightFar;
         uniform vec3 uFog; uniform float uFogAmt;
         uniform float uTime; uniform float uHover;
         uniform sampler2D uFlowmap; uniform float uFlowStrength;
+        uniform float uGrainAmt; uniform float uGrainRough; uniform float uFrostRough;
         varying float vReveal;
         varying float vAlpha;
         varying float vWarpPool;
+        varying float vGrain;
+        varying float vFrost;
         varying vec2 vFaceUv;
         vec3 _hueShift(vec3 p, float a) {
           float s = sin(a), c = cos(a), k = (1.0 - c) / 3.0, sq = 0.57735;
@@ -792,7 +835,8 @@ function _patchCube(material) {
           #ifdef DECODE_VIDEO_TEXTURE
             sampledDiffuseColor = sRGBTransferEOTF(sampledDiffuseColor);
           #endif
-          diffuseColor *= sampledDiffuseColor;
+          // Image-in-cube disabled for now — the projector spotlight carries the image instead.
+          // diffuseColor *= sampledDiffuseColor;
         #endif
         vec3 _c = diffuseColor.rgb;
         float _L = dot(_c, vec3(0.2126, 0.7152, 0.0722));
@@ -806,6 +850,8 @@ function _patchCube(material) {
           vec3 _irid = _hueShift(_c, _hueAngle);
           _c = mix(_c, _irid, vWarpPool * 0.45);
         }
+        _c *= mix(1.0 - uGrainAmt, 1.0 + uGrainAmt, vGrain);  // static Perlin brightness grain
+        _c = mix(_c, mix(_c, vec3(dot(_c, vec3(0.333)) + 0.12), 0.6), vFrost); // frosted: milky, desaturated
         diffuseColor.rgb = _c;                          // every cube shows its image fragment
         diffuseColor.a *= vAlpha;                      // glass faint/clearing, image layer solid`);
   };
@@ -1012,6 +1058,8 @@ export function destroy() {
   _wobble = null;
   _mistFront?.destroy();
   _mistFront = null;
+  _projector?.destroy();
+  _projector = null;
   window.removeEventListener('resize',    _handlers.resize);
   window.removeEventListener('mousemove', _handlers.mousemove);
   window.removeEventListener('keydown',   _handlers.keydown);

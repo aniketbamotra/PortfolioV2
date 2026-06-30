@@ -6,7 +6,7 @@
 
 import GUI from 'lil-gui';
 
-export function initSceneGui({ scene, renderer, bloomEffect, floor }) {
+export function initSceneGui({ scene, renderer, bloomEffect, floor, projector }) {
   const gui = new GUI({ title: 'Scene' });
   const TAU = Math.PI * 2;
 
@@ -37,6 +37,17 @@ export function initSceneGui({ scene, renderer, bloomEffect, floor }) {
     fl.addColor(proxy, 'tint').name('tint').onChange((v) => u.color.value.set(v));
   }
 
+  if (projector?.light) {
+    const l = projector.light;
+    const pj = gui.addFolder('Projector');
+    pj.add(l, 'visible').name('visible');
+    pj.add(l, 'intensity', 0, 400, 1).name('intensity');
+    pj.add(l, 'angle', 0.05, Math.PI / 2, 0.01).name('cone angle');
+    pj.add(l, 'penumbra', 0, 1, 0.01).name('penumbra (soft)');
+    pj.add(l.position, 'z', 0.5, 6, 0.05).name('distance (z)');
+    if (projector.params) pj.add(projector.params, 'travel', 0, 5, 0.05).name('cursor travel');
+  }
+
   const post = gui.addFolder('Post');
   if (bloomEffect) {
     post.add(bloomEffect, 'intensity', 0, 3, 0.01).name('bloom intensity');
@@ -46,5 +57,14 @@ export function initSceneGui({ scene, renderer, bloomEffect, floor }) {
   }
   if (renderer) post.add(renderer, 'toneMappingExposure', 0, 3, 0.01).name('exposure');
 
-  return { destroy: () => gui.destroy() };
+  // Cube ripple controls — attached later, once the cube shader has compiled (uniforms live).
+  let _rippleFolder = null;
+  function addCubeControls(u) {
+    if (!u || _rippleFolder) return;
+    _rippleFolder = gui.addFolder('Cube ripple');
+    _rippleFolder.add(u.uRippleAmp, 'value', 0, 1, 0.01).name('ripple amp');
+    _rippleFolder.add(u.uRipplePeriod, 'value', 0.5, 10, 0.05).name('ripple period (s)');
+  }
+
+  return { destroy: () => gui.destroy(), addCubeControls };
 }
