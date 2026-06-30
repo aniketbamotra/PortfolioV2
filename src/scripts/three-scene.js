@@ -695,6 +695,8 @@ function _patchCube(material) {
       // flowmap — cursor velocity → image UV distortion (image "pours" on drag)
       uFlowmap:     _flowmap ? _flowmap.uniform : { value: null },
       uFlowStrength: { value: 0.07 }, // UV slide magnitude (subtle but readable)
+      uMouseFactor:    { value: 0.9 },  // flow speed → per-cube Z displacement
+      uMouseLightness: { value: 1.4 },  // flow speed → per-cube brightness lift
       // static per-cube Perlin grain — spatially-coherent surface variation (brightness + roughness)
       uGrainScale: { value: 1.6 },   // noise frequency across the card face
       uGrainAmt:   { value: 0.16 },  // brightness variation (± fraction)
@@ -716,11 +718,13 @@ function _patchCube(material) {
         uniform float uBumpAmp;
         uniform float uWarpRadius; uniform float uLensAmp; uniform float uWaveAmp; uniform float uWaveSpeed;
         uniform float uGrainScale;
+        uniform sampler2D uFlowmap; uniform float uMouseFactor;
         varying float vReveal;
         varying float vAlpha;
         varying float vWarpPool;
         varying float vGrain;
         varying float vFrost;
+        varying float vFlow;
         varying vec2 vFaceUv;
         float _gh(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
         float _gn(vec2 p){ vec2 i = floor(p), f = fract(p); float a=_gh(i),b=_gh(i+vec2(1,0)),c=_gh(i+vec2(0,1)),d=_gh(i+vec2(1,1)); vec2 u=f*f*(3.0-2.0*f); return mix(mix(a,b,u.x),mix(c,d,u.x),u.y); }
@@ -793,6 +797,10 @@ function _patchCube(material) {
         vWarpPool = _warpPool;
         vFaceUv = _ctr.xy / (2.0 * uHalfExtent) + 0.5; // 0-1 card-face position (matches flowmap space)
         vGrain = _gf(_ctr.xy * uGrainScale + 11.3);    // static per-cube Perlin grain (no uTime)
+        // Flowmap (cursor velocity sim) → per-cube push toward camera + brightness signal.
+        float _flowSpd = length(texture2D(uFlowmap, vFaceUv).rg);
+        transformed.z += _flowSpd * uMouseFactor;
+        vFlow = _flowSpd;
         // live-position UV: sample the cover under the cube's CURRENT location, continuously
         // (no grid quantization) so a drifting cube's fragment slides smoothly — no pop.
         // Resolves to the correct image when collapsed (drift = 0) → crisp on hover.
@@ -811,11 +819,13 @@ function _patchCube(material) {
         uniform float uTime; uniform float uHover;
         uniform sampler2D uFlowmap; uniform float uFlowStrength;
         uniform float uGrainAmt; uniform float uGrainRough; uniform float uFrostRough;
+        uniform float uMouseLightness;
         varying float vReveal;
         varying float vAlpha;
         varying float vWarpPool;
         varying float vGrain;
         varying float vFrost;
+        varying float vFlow;
         varying vec2 vFaceUv;
         vec3 _hueShift(vec3 p, float a) {
           float s = sin(a), c = cos(a), k = (1.0 - c) / 3.0, sq = 0.57735;
@@ -851,6 +861,7 @@ function _patchCube(material) {
           _c = mix(_c, _irid, vWarpPool * 0.45);
         }
         _c *= mix(1.0 - uGrainAmt, 1.0 + uGrainAmt, vGrain);  // static Perlin brightness grain
+        _c *= 1.0 + clamp(vFlow, 0.0, 1.0) * uMouseLightness; // cursor-flow brightness lift
         _c = mix(_c, mix(_c, vec3(dot(_c, vec3(0.333)) + 0.12), 0.6), vFrost); // frosted: milky, desaturated
         diffuseColor.rgb = _c;                          // every cube shows its image fragment
         diffuseColor.a *= vAlpha;                      // glass faint/clearing, image layer solid`);

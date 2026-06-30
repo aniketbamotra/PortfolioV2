@@ -64,6 +64,8 @@ export function initSceneGui({ scene, renderer, bloomEffect, floor, projector })
     _rippleFolder = gui.addFolder('Cube ripple');
     _rippleFolder.add(u.uRippleAmp, 'value', 0, 1, 0.01).name('ripple amp');
     _rippleFolder.add(u.uRipplePeriod, 'value', 0.5, 10, 0.05).name('ripple period (s)');
+    if (u.uMouseFactor)    _rippleFolder.add(u.uMouseFactor, 'value', 0, 4, 0.01).name('flow displace');
+    if (u.uMouseLightness) _rippleFolder.add(u.uMouseLightness, 'value', 0, 4, 0.01).name('flow brightness');
   }
 
   return { destroy: () => gui.destroy(), addCubeControls };
