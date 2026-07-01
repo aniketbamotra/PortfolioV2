@@ -90,6 +90,7 @@ let _revealU = null;        // shader.uniforms ref (uCursor / uHover updated per
 const _cursor = new THREE.Vector2(0, 0);  // smoothed cursor in card-local face coords
 let _hover = 0;                           // 0→1 presence (fades when leaving the card)
 let _hoverTarget = 0;
+const _camMouse = new THREE.Vector2();    // slower-smoothed mouse for camera parallax
 const _raycaster = new THREE.Raycaster();
 const _revealPlane = new THREE.Plane();
 const _planeN = new THREE.Vector3();
@@ -109,6 +110,8 @@ const targetMouse  = new THREE.Vector2(0, 0);
 // (All scene lights removed — clean slate for rebuilding lighting.)
 
 // Cursor bump — a bell-shaped dome that rises toward the camera under the pointer.
+const CAM_REST_Z   = 5.5;
+const _camParams   = { travelX: 1.0, travelY: 0.5, zFactor: 1.25, lerp: 0.028 };
 const BUMP_AMP     = 0.9;        // peak height (world units)
 const BUMP_RADIUS  = 1.0;        // bell radius (local face units; < REVEAL_RADIUS for a small bump)
 const BUMP_ATTACK  = 0.20;       // rise speed (per frame lerp) — quick up
@@ -207,10 +210,9 @@ export function initScene(canvas) {
     });
   }
 
-  camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 100);
-  // Head-on with the card centre (cardGroup sits at y 0.3) so the face is square to camera.
-  camera.position.set(0, 0.3, 6.5);
-  camera.lookAt(0, 0.3, 0);
+  camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 2000);
+  camera.position.set(0, 0, CAM_REST_Z);
+  camera.lookAt(0, 0, 0);
 
   // Post-processing — bloom + vignette, plus DOF + chromatic aberration (cinematic).
   bloomEffect = new BloomEffect({ intensity: 0.5, luminanceThreshold: 0.72, luminanceSmoothing: 0.7, mipmapBlur: true, radius: 0.6 });
@@ -267,7 +269,7 @@ export function initScene(canvas) {
   // Dev-only scene/env controls — lazy-loaded so the GUI never ships to normal visitors.
   if (import.meta.env.DEV || location.search.includes('lights')) {
     import('./scene-gui.js').then(({ initSceneGui }) => {
-      _gui = initSceneGui({ scene, renderer, bloomEffect, floor: _floor, projector: _projector });
+      _gui = initSceneGui({ scene, renderer, bloomEffect, floor: _floor, projector: _projector, camera, camParams: _camParams });
     });
   }
 
@@ -323,6 +325,16 @@ export function initScene(canvas) {
     const t = clock.getElapsedTime();
     mouse.x += (targetMouse.x - mouse.x) * 0.05;
     mouse.y += (targetMouse.y - mouse.y) * 0.05;
+
+    _camMouse.x += (targetMouse.x - _camMouse.x) * _camParams.lerp;
+    _camMouse.y += (targetMouse.y - _camMouse.y) * _camParams.lerp;
+    if (!prefersReduced) {
+      const cy = -_camMouse.y * _camParams.travelY;
+      camera.position.x = _camMouse.x * _camParams.travelX;
+      camera.position.y = cy;
+      camera.position.z = CAM_REST_Z + cy * _camParams.zFactor;
+    }
+    camera.lookAt(0, 0, 0);
 
     if (cardGroup && !prefersReduced) {
       if (_wobble) _wobble.update(t);   // 3D Perlin float — mutates cardGroup.position in place
@@ -664,8 +676,8 @@ function _patchCube(material) {
       uTime:       { value: 0 },
       uHalfExtent: { value: _halfExtent },
       // alien.js-style Gaussian ring ripple (replaces old sine-wave ripple)
-      uRipplePeriod: { value: 3.5 },  // seconds per full ring expansion (two rings staggered)
-      uRippleAmp:    { value: 0.38 }, // Z peak displacement at ring crest
+      uRipplePeriod: { value: 3.0 },  // seconds per full ring expansion (two rings staggered)
+      uRippleAmp:    { value: 1.0 }, // Z peak displacement at ring crest
       uDepthVisFar:   { value: 0.6 },                       // opacity of the deepest layer (near = 1.0, mid ≈ 0.75)
       uKeepFrac:      { value: 0.6 },                        // keep fraction at the far edges (centre stays 100%)
       uDenseRadius:   { value: 5.0 },                       // cubes within this radius stay fully dense
@@ -695,8 +707,8 @@ function _patchCube(material) {
       // flowmap — cursor velocity → image UV distortion (image "pours" on drag)
       uFlowmap:     _flowmap ? _flowmap.uniform : { value: null },
       uFlowStrength: { value: 0.07 }, // UV slide magnitude (subtle but readable)
-      uMouseFactor:    { value: 0.9 },  // flow speed → per-cube Z displacement
-      uMouseLightness: { value: 1.4 },  // flow speed → per-cube brightness lift
+      uMouseFactor:    { value: 1.54 }, // flow speed → per-cube Z displacement
+      uMouseLightness: { value: 0.0 },  // flow speed → per-cube brightness lift
       // static per-cube Perlin grain — spatially-coherent surface variation (brightness + roughness)
       uGrainScale: { value: 1.6 },   // noise frequency across the card face
       uGrainAmt:   { value: 0.16 },  // brightness variation (± fraction)

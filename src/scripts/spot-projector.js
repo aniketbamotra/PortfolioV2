@@ -13,9 +13,8 @@ const _loader = new THREE.TextureLoader();
 export function initProjector({ scene, target = new THREE.Vector3(0, 0.3, -0.6) } = {}) {
   const base = new THREE.Vector3(0, 0.3, 3.7);
 
-  // angle ~30° half-cone covers the card face at this distance; decay 0 + distance 0 = constant
-  // (non-physical) falloff so the projected image stays even across the card.
-  const light = new THREE.SpotLight(0xffffff, 50, 0, Math.PI / 6, 0.5, 0);
+  // Physical decay=2: intensity falls off with distance² → natural centre-bright vignette.
+  const light = new THREE.SpotLight(0xffffff, 220, 0, Math.PI / 4, 0.95, 2);
   light.position.copy(base);
   light.shadow.camera.near = 0.5;
   light.shadow.camera.far  = 12;
@@ -28,7 +27,7 @@ export function initProjector({ scene, target = new THREE.Vector3(0, 0.3, -0.6) 
   scene.add(light);
 
   let _tex = null;
-  const params = { travel: 1.6 }; // cursor → light translation range (world units)
+  const params = { travel: 0 }; // cursor → light translation range (world units)
 
   return {
     light,

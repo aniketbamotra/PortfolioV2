@@ -6,7 +6,7 @@
 
 import GUI from 'lil-gui';
 
-export function initSceneGui({ scene, renderer, bloomEffect, floor, projector }) {
+export function initSceneGui({ scene, renderer, bloomEffect, floor, projector, camera, camParams }) {
   const gui = new GUI({ title: 'Scene' });
   const TAU = Math.PI * 2;
 
@@ -35,6 +35,14 @@ export function initSceneGui({ scene, renderer, bloomEffect, floor, projector })
     fl.add(u.uRadius, 'value', 5, 60, 0.5).name('fade radius');
     const proxy = { tint: '#' + u.color.value.getHexString() };
     fl.addColor(proxy, 'tint').name('tint').onChange((v) => u.color.value.set(v));
+  }
+
+  if (camera && camParams) {
+    const cam = gui.addFolder('Camera');
+    cam.add(camParams, 'travelX', 0, 2, 0.01).name('travel X');
+    cam.add(camParams, 'travelY', 0, 1, 0.01).name('travel Y');
+    cam.add(camParams, 'zFactor', 0, 3, 0.05).name('z coupling');
+    cam.add(camParams, 'lerp', 0.005, 0.15, 0.001).name('smoothing');
   }
 
   if (projector?.light) {
