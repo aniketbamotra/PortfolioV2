@@ -1,0 +1,711 @@
+{
+  "_comment": "Snapshot of hardcoded scene defaults — not loaded at runtime. Values mirror src/scripts/* as of 2026-07-01. Tune in code or use dev GUI (?lights); this file is the canonical reference for handoff and future migration.",
+
+  "meta": {
+    "version": 1,
+    "description": "Read-only inventory of Three.js homepage scene configuration",
+    "skyMode": "dome",
+    "modules": {
+      "environment": false,
+      "cloudLayer": false,
+      "skyDome": true,
+      "reflectiveFloor": true,
+      "mistFront": true,
+      "projector": true,
+      "sceneGui": "dev or ?lights URL flag only"
+    }
+  },
+
+  "renderer": {
+    "antialias": true,
+    "preserveDrawingBuffer": true,
+    "powerPreference": "high-performance",
+    "pixelRatio": {
+      "desktopMax": 2,
+      "mobileMax": 1.5
+    },
+    "mobileBreakpoint": 768,
+    "toneMapping": "ACESFilmicToneMapping",
+    "toneMappingExposure": 1.05,
+    "outputColorSpace": "SRGBColorSpace"
+  },
+
+  "scene": {
+    "background": "#04040c",
+    "backgroundBlurriness": 0.35,
+    "backgroundIntensity": 0.5,
+    "environmentIntensity": 0.05,
+    "backgroundRotation": { "x": 0, "y": 0, "z": 0 },
+    "environmentRotation": { "x": 0, "y": 0, "z": 0 },
+    "environmentMap": {
+      "exrPath": "/assets/sky_env.exr",
+      "mapping": "EquirectangularReflectionMapping",
+      "pmremSceneNear": 0.04
+    }
+  },
+
+  "sky": {
+    "geometry": {
+      "radius": 90,
+      "widthSegments": 64,
+      "heightSegments": 32
+    },
+    "renderOrder": -1000,
+    "side": "BackSide",
+    "depthWrite": false,
+    "fog": false,
+    "colors": {
+      "top": "#0d1118",
+      "bottom": "#07090c",
+      "mist": "#b8c0c8",
+      "accent": "#7fa0ff"
+    },
+    "shaderConstants": {
+      "runtimeTunable": false,
+      "baseGradientPow": 0.85,
+      "uvProjectionDenominator": 0.55,
+      "mistBanks": [
+        { "scale": 1.0, "drift": [0.006, 0.0], "azimuthCenter": -1.9, "azimuthWidth": 0.85, "weight": 1.0 },
+        { "scale": 1.4, "drift": [-0.004, 0.003], "azimuthCenter": 0.5, "azimuthWidth": 0.7, "weight": 0.85 },
+        { "scale": 0.8, "drift": [0.003, -0.002], "azimuthCenter": 2.5, "azimuthWidth": 1.0, "weight": 0.7 }
+      ],
+      "mistSmoothstep": [0.34, 0.85],
+      "lowMaskSmoothstep": [0.8, 0.12],
+      "densityMix": 0.55,
+      "lightShaftFbmScale": 1.8,
+      "lightShaftTimeScale": 0.02,
+      "lightShaftSmoothstep": [0.55, 0.95],
+      "lightShaftHeightMask": [0.65, 0.1],
+      "lightShaftStrength": 0.1,
+      "accentMix": 0.12,
+      "fbmOctaves": 6
+    }
+  },
+
+  "camera": {
+    "fov": 55,
+    "near": 0.1,
+    "far": 2000,
+    "restPosition": [0, 0, 5.5],
+    "lookAt": [0, 0, 0],
+    "parallax": {
+      "travelX": 1.0,
+      "travelY": 0.5,
+      "zFactor": 1.25,
+      "lerp": 0.028
+    },
+    "mouseSmoothing": 0.05,
+    "gui": {
+      "travelXRange": [0, 2],
+      "travelYRange": [0, 1],
+      "zFactorRange": [0, 3],
+      "lerpRange": [0.005, 0.15]
+    }
+  },
+
+  "post": {
+    "bloom": {
+      "intensity": 0.5,
+      "luminanceThreshold": 0.72,
+      "luminanceSmoothing": 0.7,
+      "mipmapBlur": true,
+      "radius": 0.6,
+      "gui": {
+        "intensityRange": [0, 3],
+        "thresholdRange": [0, 1]
+      }
+    },
+    "vignette": {
+      "darkness": 0.55,
+      "offset": 0.35
+    },
+    "chromaticAberration": {
+      "offset": [0.0012, 0.0012],
+      "radialModulation": true,
+      "modulationOffset": 0.15
+    },
+    "depthOfField": {
+      "enabledWhenNotMobile": true,
+      "worldFocusDistance": 6.4,
+      "worldFocusRange": 1.8,
+      "bokehScale": 2.0
+    },
+    "exposure": {
+      "guiRange": [0, 3]
+    }
+  },
+
+  "fog": {
+    "type": "FogExp2",
+    "initialPresetIndex": 0,
+    "clearColorMatchesFog": true,
+    "lightingPresets": [
+      {
+        "label": "DLS — cool blue-violet",
+        "ambient": "#1a2238",
+        "ambientInt": 0.5,
+        "spot": "#dfe6ff",
+        "spotInt": 30,
+        "spotPos": [2, 4, 4],
+        "fog": "#03030a",
+        "fogDensity": 0.014
+      },
+      {
+        "label": "Particles — electric blue",
+        "ambient": "#05050f",
+        "ambientInt": 0.4,
+        "spot": "#aabbff",
+        "spotInt": 46,
+        "spotPos": [-2, 4, 4],
+        "fog": "#020207",
+        "fogDensity": 0.02
+      },
+      {
+        "label": "Brand — warm emerald",
+        "ambient": "#040a05",
+        "ambientInt": 0.4,
+        "spot": "#55ddaa",
+        "spotInt": 44,
+        "spotPos": [1, 5, 4],
+        "fog": "#020605",
+        "fogDensity": 0.016
+      },
+      {
+        "label": "Analytics — deep navy",
+        "ambient": "#020408",
+        "ambientInt": 0.4,
+        "spot": "#5577cc",
+        "spotInt": 48,
+        "spotPos": [3, 4, 4],
+        "fog": "#010205",
+        "fogDensity": 0.022
+      },
+      {
+        "label": "Experiments — warm amber",
+        "ambient": "#0a0600",
+        "ambientInt": 0.4,
+        "spot": "#ffaa44",
+        "spotInt": 48,
+        "spotPos": [2, 3, 5],
+        "fog": "#060300",
+        "fogDensity": 0.016
+      }
+    ],
+    "note": "Scene lights removed; presets currently drive fog color/density only on project switch"
+  },
+
+  "voxel": {
+    "gridCols": 40,
+    "gridRows": 24,
+    "footprintScale": 4.0,
+    "cellSizeMultiplier": 0.92,
+    "depthLum": 0.15,
+    "depthNoise": 0.03,
+    "dataSource": "/assets/cube_positions.json",
+    "frustumCulled": false,
+    "material": {
+      "color": "#0b0b0b",
+      "roughness": 0.55,
+      "metalness": 0.0,
+      "envMapIntensity": 0.22,
+      "transparent": true,
+      "depthWrite": false,
+      "blending": "NormalBlending",
+      "side": "FrontSide"
+    },
+    "cursorReveal": {
+      "revealRadius": 2.2,
+      "idleFloor": 1.0,
+      "hoverLerp": 0.08,
+      "cursorLerp": 0.18,
+      "revealAttack": 0.22,
+      "revealRelease": 0.04
+    },
+    "cursorBump": {
+      "bumpAmp": 0.9,
+      "bumpRadius": 1.0,
+      "bumpAttack": 0.2,
+      "bumpRelease": 0.03
+    },
+    "colorSampler": {
+      "canvasWidth": 160,
+      "neutralColor": { "r": 0.1, "g": 0.12, "b": 0.18, "lum": 0.12 },
+      "neutralDominant": { "r": 0.5, "g": 0.55, "b": 0.62 }
+    },
+    "shaderUniforms": {
+      "uDriftAmt": 0.0,
+      "uDriftSpeed": 0.4,
+      "uRadius": 2.2,
+      "uIdleFloor": 1.0,
+      "uSatFar": 0.15,
+      "uConFar": 0.7,
+      "uBrightFar": 0.85,
+      "uFog": "#0a0e1a",
+      "uFogAmt": 0.6,
+      "uRipplePeriod": 3.0,
+      "uRippleAmp": 1.0,
+      "uDepthVisFar": 0.6,
+      "uKeepFrac": 0.6,
+      "uDenseRadius": 5.0,
+      "uFadeRadius": 22.0,
+      "uPullXY": 0.18,
+      "uPullZ": 0.1,
+      "uOuterFade": 0.55,
+      "uEdgeLayer": 0.25,
+      "uHoleThresh": 0.12,
+      "uHoleDepth": 0.7,
+      "uDepthScatter": 0.08,
+      "uDepthFunnel": 0.06,
+      "uHideScale": 0.0,
+      "uTranspFrac": 0.18,
+      "uTranspAlpha": 0.35,
+      "uTransFrac": 0.28,
+      "uTransAlpha": 0.55,
+      "uFrostFrac": 0.16,
+      "uFrostAlpha": 0.6,
+      "uFrostRough": 0.5,
+      "uBumpAmp": 0.9,
+      "uWarpRadius": 1.8,
+      "uLensAmp": 0.55,
+      "uWaveAmp": 0.1,
+      "uWaveSpeed": 2.8,
+      "uFlowStrength": 0.07,
+      "uMouseFactor": 1.54,
+      "uMouseLightness": 0.0,
+      "uGrainScale": 1.6,
+      "uGrainAmt": 0.16,
+      "uGrainRough": 0.3
+    },
+    "shaderConstants": {
+      "runtimeTunable": false,
+      "colRandHashMultiplier": 263.17,
+      "colRandHashOffset": 0.137,
+      "rippleGaussianSharpness": 16.0,
+      "rippleMaxRadiusFactor": 1.15,
+      "rippleStaggerPhase": 0.5,
+      "warpDomeExpFactor": 0.22,
+      "waveFrequency": 5.0,
+      "waveDecay": 2.2,
+      "iridescenceHueSpeed": 0.7,
+      "iridescenceRevealFactor": 1.5,
+      "iridescenceMix": 0.45,
+      "frostDesaturateMix": 0.6,
+      "frostLift": 0.12,
+      "roughnessClamp": [0.04, 1.0]
+    },
+    "gui": {
+      "uRippleAmpRange": [0, 1],
+      "uRipplePeriodRange": [0.5, 10],
+      "uMouseFactorRange": [0, 4],
+      "uMouseLightnessRange": [0, 4]
+    }
+  },
+
+  "flowmap": {
+    "size": 128,
+    "falloff": 0.2,
+    "alpha": 1,
+    "dissipation": 0.97
+  },
+
+  "wobble": {
+    "frequency": [0.28, 0.2, 0.14],
+    "amplitude": [0.06, 0.09, 0.025],
+    "lerpSpeed": 0.018
+  },
+
+  "cardMotion": {
+    "tiltY": 0.14,
+    "tiltX": 0.07,
+    "groupPosition": [0, 0, 0]
+  },
+
+  "reflectiveFloor": {
+    "enabled": true,
+    "radius": 30,
+    "segments": 128,
+    "visible": true,
+    "reflector": {
+      "color": "#111111",
+      "textureWidth": 1024,
+      "textureHeight": 1024,
+      "clipBias": 0.003
+    },
+    "uniforms": {
+      "uReflectivity": 1.0,
+      "uRadius": 30,
+      "uDistort": 0.025,
+      "uContrast": 1.09,
+      "uFlow": 0.31,
+      "uTint": 0.82,
+      "uNormalRepeat": 0.1
+    },
+    "transform": {
+      "position": [0, -1.65, 0],
+      "rotationX": -1.5216
+    },
+    "accentLerp": 0.15,
+    "normalMap": "/assets/textures/floor-normal.png",
+    "renderOrder": -1,
+    "transparent": true,
+    "depthWrite": false,
+    "fogStrippedOnReflect": true,
+    "shaderConstants": {
+      "runtimeTunable": false,
+      "normalScrollLayer1": [0.03, 0.02],
+      "normalScrollLayer2": [-0.025, 0.018],
+      "normalLayer2Scale": 1.7,
+      "fresnelPower": 5.0,
+      "fresnelBoost": 0.5,
+      "specularSmoothstep": [0.5, 0.95],
+      "specularAdd": 0.12,
+      "baseColorMix": 0.25,
+      "alphaFadeSmoothstep": [0.35, 1.0]
+    },
+    "gui": {
+      "visible": true,
+      "positionYRange": [-6, 2],
+      "positionXRange": [-10, 10],
+      "positionZRange": [-10, 10],
+      "rotationXRange": [-3.14159, 0],
+      "uReflectivityRange": [0, 1],
+      "uDistortRange": [0, 0.15],
+      "uFlowRange": [0, 4],
+      "uNormalRepeatRange": [0.1, 6],
+      "uContrastRange": [0.5, 3],
+      "uTintRange": [0, 1],
+      "uRadiusRange": [5, 60]
+    }
+  },
+
+  "mistFront": {
+    "geometry": [11, 8],
+    "position": [0, 0.3, 3.0],
+    "renderOrder": 50,
+    "transparent": true,
+    "depthWrite": false,
+    "colors": {
+      "uColor": "#b8c0c8",
+      "accentMix": 0.1
+    },
+    "uOpacity": 0.3,
+    "shaderConstants": {
+      "runtimeTunable": false,
+      "fbmOctaves": 5,
+      "warpScale": 2.0,
+      "warpDrift": [0.01, 0.008],
+      "fbmScale": 2.6,
+      "fbmTimeScale": 0.006,
+      "densitySmoothstep": [0.3, 0.85],
+      "sideMaskLeft": [0.45, 0.06],
+      "sideMaskRight": [0.55, 0.94],
+      "verticalFade": [0.0, 0.12, 1.0, 0.88]
+    }
+  },
+
+  "projector": {
+    "visible": true,
+    "color": "#ffffff",
+    "intensity": 220,
+    "distance": 0,
+    "angle": 0.785398,
+    "penumbra": 0.95,
+    "decay": 2,
+    "basePosition": [0, 0, 3.7],
+    "target": [0, 0, 0],
+    "shadowCamera": {
+      "near": 0.5,
+      "far": 12,
+      "focus": 1
+    },
+    "cursorTravel": 0,
+    "mapRotation": 3.14159,
+    "gui": {
+      "intensityRange": [0, 400],
+      "angleRange": [0.05, 1.5708],
+      "penumbraRange": [0, 1],
+      "positionZRange": [0.5, 6],
+      "travelRange": [0, 5]
+    }
+  },
+
+  "environment": {
+    "enabled": false,
+    "groundY": -1.6,
+    "groundSize": [60, 60],
+    "fbmOctaves": { "desktop": 4, "mobile": 2 },
+    "transition": {
+      "stageOffsets": [0, 0.6, 1.2, 1.8],
+      "stageDuration": 3.5,
+      "totalDuration": 5.3
+    },
+    "reflector": {
+      "textureScale": 0.5,
+      "clipBias": 0.003,
+      "color": "#000000",
+      "renderEveryNthFrame": 2
+    },
+    "groundShader": {
+      "uStrength": 0.5,
+      "uFog": "#05060e",
+      "accentWash": 0.05,
+      "alphaVis": 0.85
+    },
+    "blurIterations": { "desktop": 2, "mobile": 1 },
+    "volumePlanes": {
+      "desktop": [
+        { "z": -9, "phase": 0.0, "opacity": 0.05 },
+        { "z": -6, "phase": 1.3, "opacity": 0.05 },
+        { "z": -3.5, "phase": 2.6, "opacity": 0.045 },
+        { "z": -1, "phase": 4.0, "opacity": 0.035 },
+        { "z": 1.4, "phase": 5.5, "opacity": 0.025 }
+      ],
+      "mobile": [
+        { "z": -7, "phase": 0.0, "opacity": 0.05 },
+        { "z": -3, "phase": 2.1, "opacity": 0.045 }
+      ]
+    },
+    "volumePlaneGeometry": [34, 26],
+    "volumePlaneY": 0.3,
+    "volumePlaneXStaggerFactor": 0.4,
+    "volumePlaneRenderOrder": -1,
+    "volumeShaderConstants": {
+      "runtimeTunable": false,
+      "fbmScale": 2.2,
+      "driftSpeed": [0.01, 0.008],
+      "densitySmoothstep": [0.35, 0.95],
+      "edgeFade": 0.32
+    },
+    "ceiling": {
+      "geometry": [54, 40],
+      "position": [-1.5, 7.0, -5.0],
+      "rotationX": -1.06814,
+      "renderOrder": -2,
+      "shaderConstants": {
+        "runtimeTunable": false,
+        "fbmScale": 3.0,
+        "warpDrift": [0.02, 0.018],
+        "warpStrength": 1.6,
+        "timeScale": 0.01,
+        "densitySmoothstep": [0.32, 0.88],
+        "edgeFade": 0.38,
+        "alpha": 0.24,
+        "brightnessMix": [0.55, 0.65]
+      }
+    },
+    "glow": {
+      "geometry": [18, 18],
+      "position": [5.5, 5.0, -8.0],
+      "opacity": 0.5,
+      "blending": "AdditiveBlending",
+      "toneMapped": false,
+      "renderOrder": -3,
+      "textureSize": 256
+    },
+    "mobileGroundFallback": {
+      "uFog": "#05060e",
+      "accentMix": 0.15,
+      "alpha": 0.5
+    }
+  },
+
+  "cloudLayer": {
+    "enabled": false,
+    "foreground": {
+      "enabled": true,
+      "blend": "normal",
+      "opacity": 0.04,
+      "mobileOpacityScale": 0.7,
+      "geometry": [14, 14],
+      "position": [0, 0.6, 3.0],
+      "renderOrder": 5,
+      "reuseTextureIndex": 2,
+      "drift": [0.0006, 0.0004],
+      "rot": 0.0008,
+      "phase": 1.0,
+      "cross": 0.03
+    },
+    "contrast": 0.8,
+    "lighting": {
+      "gain": 0.025,
+      "falloff": 0.05,
+      "ambientFloor": 0.35
+    },
+    "transitionDuration": 4.0,
+    "mobileOpacityScale": 0.7,
+    "planes": [
+      {
+        "tex": "/assets/clouds/cloudA.png",
+        "size": 48,
+        "position": [-1, 3.5, -4],
+        "tilt": -0.18,
+        "drift": [0.002, 0.0011],
+        "rot": 0.004,
+        "phase": 0.0,
+        "cross": 0.06,
+        "opacity": 0.7,
+        "renderOrder": -8
+      },
+      {
+        "tex": "/assets/clouds/cloudB.png",
+        "size": 62,
+        "position": [1, 5.0, -6],
+        "tilt": -0.16,
+        "drift": [-0.0013, 0.0008],
+        "rot": -0.0026,
+        "phase": 2.1,
+        "cross": 0.045,
+        "opacity": 0.6,
+        "renderOrder": -9
+      },
+      {
+        "tex": "/assets/clouds/cloudC.png",
+        "size": 78,
+        "position": [-2, 6.5, -8],
+        "tilt": -0.14,
+        "drift": [0.0008, -0.0006],
+        "rot": 0.0015,
+        "phase": 4.0,
+        "cross": 0.035,
+        "opacity": 0.5,
+        "renderOrder": -10
+      }
+    ],
+    "shaderConstants": {
+      "runtimeTunable": false,
+      "featherEdge": 0.35,
+      "crossfadeBase": 0.6,
+      "crossfadeAmplitude": 0.4,
+      "albedoMix": [0.6, 0.8],
+      "luminanceWeights": [0.299, 0.587, 0.114]
+    }
+  },
+
+  "transitions": {
+    "projectSwitchDurationMs": 800,
+    "projectSwitchEasing": "smoothstep-quadratic",
+    "wheelDebounceMs": 900,
+    "wheelDeltaThreshold": 1,
+    "accentRetint": {
+      "skyDome": "immediate",
+      "reflectiveFloor": "immediate",
+      "mistFront": "immediate",
+      "environment": "staggered ~5.3s when enabled",
+      "cloudLayer": "4.0s when enabled"
+    }
+  },
+
+  "navigation": {
+    "wheelNavigation": true,
+    "keyboardNavigation": ["ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft"],
+    "prefersReducedMotion": "disables camera parallax, wobble, card tilt, shader uTime"
+  },
+
+  "perProject": [
+    {
+      "id": "design-language-system",
+      "title": "Design Language System",
+      "envAccent": "#7fa0ff",
+      "atmosphereColor": "#08080f",
+      "coverImage": "/assets/projects/keploy.png",
+      "lightingPresetIndex": 0
+    },
+    {
+      "id": "interactive-product-experience",
+      "title": "Interactive Product Experience",
+      "envAccent": "#aabbff",
+      "atmosphereColor": "#0f0505",
+      "coverImage": null,
+      "lightingPresetIndex": 1
+    },
+    {
+      "id": "brand-platform",
+      "title": "Brand & Web Platform",
+      "envAccent": "#55ddaa",
+      "atmosphereColor": "#04090a",
+      "coverImage": null,
+      "lightingPresetIndex": 2
+    },
+    {
+      "id": "analytics-dashboard",
+      "title": "Analytics Dashboard",
+      "envAccent": "#5577cc",
+      "atmosphereColor": "#04070f",
+      "coverImage": null,
+      "lightingPresetIndex": 3
+    },
+    {
+      "id": "creative-experiments",
+      "title": "Creative Experiments",
+      "envAccent": "#ffaa44",
+      "atmosphereColor": "#0d0a03",
+      "coverImage": null,
+      "lightingPresetIndex": 4
+    }
+  ],
+
+  "assets": {
+    "skyEnvExr": "/assets/sky_env.exr",
+    "cubePositions": "/assets/cube_positions.json",
+    "floorNormalMap": "/assets/textures/floor-normal.png",
+    "cloudTextures": [
+      "/assets/clouds/cloudA.png",
+      "/assets/clouds/cloudB.png",
+      "/assets/clouds/cloudC.png"
+    ],
+    "coverImages": [
+      "/assets/projects/keploy.png"
+    ]
+  },
+
+  "sceneGuiMapping": {
+    "description": "Maps lil-gui controls in scene-gui.js to JSON paths",
+    "skyEnvironment": {
+      "bg blurriness": "scene.backgroundBlurriness",
+      "bg intensity": "scene.backgroundIntensity",
+      "env (light) intensity": "scene.environmentIntensity",
+      "bg rotation": "scene.backgroundRotation.y",
+      "env rotation": "scene.environmentRotation.y"
+    },
+    "reflectiveFloor": {
+      "visible": "reflectiveFloor.visible",
+      "height (y)": "reflectiveFloor.transform.position[1]",
+      "offset x": "reflectiveFloor.transform.position[0]",
+      "offset z": "reflectiveFloor.transform.position[2]",
+      "tilt x": "reflectiveFloor.transform.rotationX",
+      "reflectivity": "reflectiveFloor.uniforms.uReflectivity",
+      "flow warp": "reflectiveFloor.uniforms.uDistort",
+      "flow speed": "reflectiveFloor.uniforms.uFlow",
+      "texture tiling": "reflectiveFloor.uniforms.uNormalRepeat",
+      "contrast": "reflectiveFloor.uniforms.uContrast",
+      "metal tint": "reflectiveFloor.uniforms.uTint",
+      "fade radius": "reflectiveFloor.uniforms.uRadius",
+      "tint": "reflectiveFloor.reflector.color"
+    },
+    "camera": {
+      "travel X": "camera.parallax.travelX",
+      "travel Y": "camera.parallax.travelY",
+      "z coupling": "camera.parallax.zFactor",
+      "smoothing": "camera.parallax.lerp"
+    },
+    "projector": {
+      "visible": "projector.visible",
+      "intensity": "projector.intensity",
+      "cone angle": "projector.angle",
+      "penumbra (soft)": "projector.penumbra",
+      "distance (z)": "projector.basePosition[2]",
+      "cursor travel": "projector.cursorTravel"
+    },
+    "post": {
+      "bloom intensity": "post.bloom.intensity",
+      "bloom threshold": "post.bloom.luminanceThreshold",
+      "exposure": "renderer.toneMappingExposure"
+    },
+    "cubeRipple": {
+      "ripple amp": "voxel.shaderUniforms.uRippleAmp",
+      "ripple period (s)": "voxel.shaderUniforms.uRipplePeriod",
+      "flow displace": "voxel.shaderUniforms.uMouseFactor",
+      "flow brightness": "voxel.shaderUniforms.uMouseLightness"
+    }
+  }
+}

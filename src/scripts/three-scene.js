@@ -1,4 +1,5 @@
 // Homepage — InstancedMesh voxel card driven by cube_positions.json.
+// Scene tuning reference: src/data/scene-settings.json
 // The card is a programmable field of 5760 glass cubes (foundation for edge
 // dissolve, hover repulsion, spring return, scroll morphing).
 // Exports: initScene(canvas), setProject(idx), setPaused(paused), destroy()
@@ -29,7 +30,6 @@ if (import.meta.hot) import.meta.hot.accept(() => window.location.reload());
 let renderer, composer, scene, camera, rafId, bloomEffect;
 let cardGroup  = null;   // holds the voxel field; gets float + mouse tilt
 let voxelMesh  = null;   // THREE.InstancedMesh — the card itself
-let glowPlane  = null;
 let _env       = null;   // hero atmosphere (ground / haze / clouds / glow) — disabled this pass
 let _cloud     = null;   // composition-validation cloud layer (3 still planes)
 let _gui       = null;   // dev-only scene/env controls (lazy, dev/?lights only)
@@ -37,7 +37,6 @@ let _sky       = null;   // procedural sky dome (SKY_MODE === 'dome')
 let _floor     = null;   // reflective floor below the card
 let _wobble    = null;   // alien.js Wobble — 3D Perlin float for cardGroup
 let _flowmap   = null;   // alien.js Flowmap — cursor velocity → UV distortion texture
-let _godRays   = null;   // procedural god-ray plane behind the card (additive)
 const _prevFlowMouse = new THREE.Vector2(); // tracks last flowmap mouse for velocity delta
 let _mistFront = null;   // foreground fog drifting in front of the card
 let _projector = null;   // cursor-driven spotlight projecting the cover image onto the card
@@ -64,10 +63,6 @@ const _v3 = new THREE.Vector3();
 const _sv = new THREE.Vector3();
 const _qI = new THREE.Quaternion();
 // (cursor-torch scratch removed — using _hit / _cursor directly)
-
-// ── Atmospheric glow behind the card ─────────────────────────────────────────
-const GLOW_CLEAR  = 0.35;
-const GLOW_IMAGED = 0.05;
 
 // ── Image reconstruction (the cubes ARE the image, C2: per-cube texture window) ─
 // Each cube maps its own UV window of the shared cover texture (aUvOffset + uTileScale).
@@ -277,9 +272,6 @@ export function initScene(canvas) {
   // Sampled in the cube fragment shader to distort image UVs — image "pours" on cursor drag.
   _flowmap = new Flowmap(renderer, { size: 128, falloff: 0.20, alpha: 1, dissipation: 0.97 });
 
-  // Procedural god-ray plane — additive light shafts behind/around the card.
-  _godRays = _buildGodRays(_accentFor(0));
-
   _buildVoxelCard(); // async — fetches cube_positions.json then builds the InstancedMesh
 
   // Mouse
@@ -364,7 +356,6 @@ export function initScene(canvas) {
     if (_cloud) _cloud.update(prefersReduced ? 0 : t);
     if (_sky) _sky.update(prefersReduced ? 0 : t);
     if (_floor) _floor.update(prefersReduced ? 0 : t);
-    if (_godRays) _godRays.update(prefersReduced ? 0 : t);
     if (_mistFront) _mistFront.update(prefersReduced ? 0 : t);
     if (_projector) _projector.update(mouse.x, mouse.y);
     if (_gui && _revealU) _gui.addCubeControls(_revealU); // idempotent — attaches once shader is live
@@ -480,7 +471,7 @@ async function _buildVoxelCard() {
   _writeAllMatrices();
 
   cardGroup = new THREE.Group();
-  cardGroup.position.set(0, 0.3, -0.6); // pushed back from camera (+Z) a touch
+  cardGroup.position.set(0, 0, 0);
   cardGroup.add(voxelMesh);
   scene.add(cardGroup);
 
@@ -489,19 +480,6 @@ async function _buildVoxelCard() {
   _wobble.frequency.set(0.28, 0.20, 0.14); // slow, aperiodic drift
   _wobble.amplitude.set(0.06, 0.09, 0.025); // subtle range; Z barely moves (camera is close)
   _wobble.lerpSpeed = 0.018;
-
-  const cover0 = cover;
-  // Atmospheric glow core behind the card (stays world-static, doesn't tilt).
-  glowPlane = new THREE.Mesh(
-    new THREE.PlaneGeometry(4.2, 2.8),
-    new THREE.MeshBasicMaterial({
-      map: _makeRadialGlow(), transparent: true,
-      blending: THREE.AdditiveBlending, depthWrite: false,
-      opacity: cover0 ? GLOW_IMAGED : GLOW_CLEAR,
-    }),
-  );
-  glowPlane.position.set(0, 0.3, -0.7);
-  scene.add(glowPlane);
 
   console.log(`[scene] voxel card — ${N} cubes · cell ${cube.toFixed(3)}`);
 }
@@ -596,9 +574,6 @@ export function setProject(idx) {
   const toFogColor   = new THREE.Color(preset.fog);
 
   const newCover  = ORBIT_PROJECTS[idx]?.coverImage || null;
-  const fromGlow  = glowPlane ? glowPlane.material.opacity : GLOW_CLEAR;
-  const toGlow    = newCover ? GLOW_IMAGED : GLOW_CLEAR;
-
   // Swap the cube texture to the new cover (the image lives in the cube tiles).
   if (newCover) {
     _loadCoverTexture(newCover).then((info) => {
@@ -616,7 +591,6 @@ export function setProject(idx) {
 
     scene.fog.color.lerpColors(fromFogColor, toFogColor, ease);
     renderer.setClearColor(scene.fog.color);
-    if (glowPlane) glowPlane.material.opacity = fromGlow + (toGlow - fromGlow) * ease;
 
     if (t < 1.0) requestAnimationFrame(_interpolate);
     else isTransitioning = false;
@@ -629,7 +603,6 @@ export function setProject(idx) {
   if (_cloud) _cloud.transition(_accentFor(idx));
   if (_sky) _sky.setColor(_accentFor(idx));
   if (_floor) _floor.setColor(_accentFor(idx));
-  if (_godRays) _godRays.setColor(_accentFor(idx));
   if (_mistFront) _mistFront.setColor(_accentFor(idx));
   _updateProjectUI(idx);
 }
@@ -883,62 +856,6 @@ function _patchCube(material) {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-// ── God-ray plane ─────────────────────────────────────────────────────────────
-// Procedural additive plane behind the card. Animated ray spokes + gaussian
-// falloff. Bloom turns the bright core into visible shafts through cube gaps.
-
-function _buildGodRays(accentHex) {
-  const geo = new THREE.PlaneGeometry(8, 5.5);
-  const mat = new THREE.ShaderMaterial({
-    uniforms: {
-      uTime:   { value: 0 },
-      uAccent: { value: new THREE.Color(accentHex) },
-    },
-    vertexShader: /* glsl */`
-      varying vec2 vUv;
-      void main() {
-        vUv = uv;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: /* glsl */`
-      uniform float uTime;
-      uniform vec3  uAccent;
-      varying vec2 vUv;
-      void main() {
-        vec2 uv = vUv * 2.0 - 1.0;          // -1..1
-        float dist = length(uv);
-        float angle = atan(uv.y, uv.x);
-        // Radial gaussian falloff — concentrated core
-        float radial = exp(-dist * dist * 3.2);
-        // Three harmonic ray bands at different speeds/counts
-        float r1 = pow(max(0.0, sin(angle * 4.0 + uTime * 0.16)), 6.0);
-        float r2 = pow(max(0.0, sin(angle * 7.0 - uTime * 0.11)), 7.0) * 0.55;
-        float r3 = pow(max(0.0, cos(angle * 3.0 + uTime * 0.07)), 8.0) * 0.35;
-        float rays = r1 + r2 + r3;
-        // Breathing modulation (whole field pulses slowly)
-        float breathe = 0.75 + 0.25 * sin(uTime * 0.38);
-        float intensity = radial * (0.18 + rays * 0.82) * breathe;
-        gl_FragColor = vec4(uAccent * intensity, intensity * 0.28);
-      }
-    `,
-    transparent: true,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-  });
-
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.position.set(0, 0.3, -1.4); // just behind the card face
-  scene.add(mesh);
-
-  return {
-    mesh,
-    update(t)   { mat.uniforms.uTime.value = t; },
-    setColor(h) { mat.uniforms.uAccent.value.set(h); },
-    destroy()   { scene.remove(mesh); geo.dispose(); mat.dispose(); },
-  };
-}
-
 function _hash(x, y, z) {
   const s = Math.sin(x * 12.9898 + y * 78.233 + z * 37.719) * 43758.5453;
   return s - Math.floor(s);
@@ -994,23 +911,6 @@ async function _buildColorSampler(cover) {
   };
   sampler.dominant = _dominantOf(px);
   return sampler;
-}
-
-// Soft radial gradient used as the luminous core behind the card.
-function _makeRadialGlow() {
-  const c = document.createElement('canvas');
-  c.width = c.height = 256;
-  const ctx = c.getContext('2d');
-  const g = ctx.createRadialGradient(128, 128, 8, 128, 128, 128);
-  g.addColorStop(0,   'rgba(150,180,255,0.90)');
-  g.addColorStop(0.4, 'rgba(70,100,200,0.35)');
-  g.addColorStop(1,   'rgba(0,0,0,0)');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, 256, 256);
-  const t = new THREE.Texture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.needsUpdate = true;
-  return t;
 }
 
 // ── UI ────────────────────────────────────────────────────────────────────────
@@ -1074,8 +974,6 @@ export function destroy() {
   _sky = null;
   _floor?.destroy();
   _floor = null;
-  _godRays?.destroy();
-  _godRays = null;
   _flowmap?.destroy();
   _flowmap = null;
   _wobble = null;
@@ -1100,5 +998,5 @@ export function destroy() {
   composer?.dispose();
   renderer?.dispose();
   _curPos = _scaleArr = _uvOffset = _vox = _colRand = _revealArr = _revealAttr = _bumpArr = _bumpAttr = null;
-  renderer = composer = scene = camera = cardGroup = voxelMesh = glowPlane = _coverTex = _revealU = null;
+  renderer = composer = scene = camera = cardGroup = voxelMesh = _coverTex = _revealU = null;
 }

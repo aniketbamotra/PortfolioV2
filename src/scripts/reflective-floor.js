@@ -130,7 +130,7 @@ export function initReflectiveFloor({ scene, accent, renderer } = {}) {
   };
 
   floor.rotation.x = -1.5216;       // near-flat, tilted slightly toward the camera
-  floor.position.y = -1.4;          // just below the card (card centre sits at y 0.3)
+  floor.position.y = -1.65;         // below the card (card centre at origin)
   floor.material.transparent = true;
   floor.material.depthWrite  = false;
   floor.renderOrder = -1;           // after the dome (-1000), before the card

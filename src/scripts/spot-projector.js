@@ -10,8 +10,8 @@ import * as THREE from 'three';
 
 const _loader = new THREE.TextureLoader();
 
-export function initProjector({ scene, target = new THREE.Vector3(0, 0.3, -0.6) } = {}) {
-  const base = new THREE.Vector3(0, 0.3, 3.7);
+export function initProjector({ scene, target = new THREE.Vector3(0, 0, 0) } = {}) {
+  const base = new THREE.Vector3(0, 0, 3.7);
 
   // Physical decay=2: intensity falls off with distance² → natural centre-bright vignette.
   const light = new THREE.SpotLight(0xffffff, 220, 0, Math.PI / 4, 0.95, 2);
