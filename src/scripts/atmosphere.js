@@ -51,6 +51,7 @@ const ATMO_FRAG = /* glsl */`
   uniform vec3  uHotColor;
   uniform vec2  uPocketPos;
   uniform float uPocketRadius, uPocketStretch, uPocketIntensity;
+  uniform float uSwirl, uSwirlScale, uSwirlSpeed;
   uniform float uGlowIntensity, uGlowEnergyGain, uGlowRadius, uGlowStretch, uGlowMouseShift;
   uniform vec2  uGlowPos;
   uniform sampler2D uInk;
@@ -93,24 +94,36 @@ const ATMO_FRAG = /* glsl */`
     lightTint = mix(lightTint, uHotColor, smoothstep(0.45, 1.0, lt));
 
     // ── Density field: three layers riding the shared wind with depth parallax ──
-    // (per-layer wind factors x1 / x0.6 / x1.6; small private speeds add internal churn;
-    //  ev slowly evolves the warp offsets so plumes change shape, not just translate)
-    float ev = uTime * 0.006;
+    // (per-layer wind factors; small private speeds add internal churn; ev evolves the warp
+    //  offsets so plumes change SHAPE, not just translate — the anti-"sliding texture" clock)
+    // Angular swirl (desktop): the sampling domain rotates by a breathing angle FIELD, so
+    // smoke masses curl and fold locally (differential rotation) instead of panning in
+    // formation. The light kernel reads the unrotated p — only the weather swirls.
+    #ifdef MOBILE
+      vec2 pd = p;
+    #else
+      float ang = (FBM(p * uSwirlScale - uTime * uSwirlSpeed) - 0.5) * uSwirl;
+      float ca = cos(ang), sa = sin(ang);
+      vec2 pd = mat2(ca, -sa, sa, ca) * p;
+    #endif
+    float ev = uTime * 0.025;
     float t1 = uTime * uL1Speed * 0.5;
-    vec2 pa1 = p + uWind * uTime;
+    vec2 pa1 = pd + uWind * uTime;
     vec2 q  = vec2(FBM(pa1 * uL1Scale + vec2(ev, t1)),
                    FBM(pa1 * uL1Scale + vec2(5.2, 1.3) - vec2(t1 * 0.6, ev)));
     float l1 = FBM(pa1 * uL1Scale + uWarp * q + vec2(t1 * 0.25, 0.0));
     l1 = smoothstep(0.25, 0.95, l1);   // soft carve — creamy masses, no stringy filaments
 
-    vec2 pa2 = p + uWind * uTime * 0.6;
+    // Layer 2 counter-drifts AGAINST the wind — layers crossing each other kills the
+    // "one texture on a globe" read.
+    vec2 pa2 = pd - uWind * uTime * 0.4;
     float l2 = FBM(pa2 * uL2Scale + uWarp * 1.6 * q + vec2(ev * 0.7, 0.0));
     l2 = smoothstep(0.20, 0.95, l2);
 
     #ifdef MOBILE
       float l3 = 0.0;
     #else
-      vec2 pa3 = p + uWind * uTime * 1.6;
+      vec2 pa3 = pd + uWind * uTime * 1.6;
       float t3 = uTime * uL3Speed * 0.5;
       float l3 = FBM(pa3 * uL3Scale + q * 0.8 + vec2(-t3, t3 * 0.6));
     #endif
@@ -119,7 +132,8 @@ const ATMO_FRAG = /* glsl */`
     // Ceiling lid — smoke pools at the top of the frame (screen-space, parallax-free), so
     // the dark upper band comes from OCCLUSION of the lit medium, not absence of light.
     // Modulated by layer 1 so the lid keeps plume structure instead of a flat gradient.
-    float lid = smoothstep(uLidStart, 1.0, vUv.y) * uLidDensity * (0.45 + 0.75 * l1);
+    // (lid y rides the parallax so the smoke ceiling pans with the sky, not with the frame)
+    float lid = smoothstep(uLidStart, 1.0, vUv.y - uParallax.y) * uLidDensity * (0.45 + 0.75 * l1);
     float d = l1 * uL1Alpha
             + l2 * uL2Alpha * mix(1.0, l1 * 2.0, uL1Mix2)
             + l3 * uL3Alpha * (0.6 + uEnergy * uEnergyGain)
@@ -208,6 +222,10 @@ export function initAtmosphere({ medium, camera = null, isMobile = false } = {})
       uPocketRadius:    { value: 0.68 },
       uPocketStretch:   { value: 0.8 },  // wider than tall — matches the card's footprint
       uPocketIntensity: { value: 0.32 },
+      // angular domain swirl — local curl of the cloud field (desktop only)
+      uSwirl:      { value: 0.6 },   // max rotation (radians) across the angle field
+      uSwirlScale: { value: 0.9 },   // spatial frequency of the angle field
+      uSwirlSpeed: { value: 0.02 },  // how fast the curl pattern itself breathes
       uEnergyGain:   { value: 0.7 },   // cursor energy → layer-3 detail boost
       uInkFog:       { value: 0.09 },  // fluid-dye trail → local fog thickening
       uGlowEnergyGain: { value: 0.0 },

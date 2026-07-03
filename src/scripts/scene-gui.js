@@ -40,10 +40,19 @@ export function initSceneGui({ scene, renderer, bloomEffect, floor, projector, c
     const fl = gui.addFolder('Reflective floor');
     fl.close();
     fl.add(f, 'visible').name('visible');
+    fl.add(u.uReflectivity, 'value', 0, 0.3, 0.005).name('reflectivity');
     fl.add(u.uFloorMixStrength, 'value', 0, 30, 0.1).name('mix strength');
     fl.add(u.uDist, 'value', 0, 5, 0.05).name('normal distortion');
     fl.add(u.uWashGain, 'value', 0, 0.5, 0.005).name('glow wash');
     fl.add(u.uContactDark, 'value', 0, 1, 0.01).name('contact shadow');
+    fl.add(u.uWaveAmp, 'value', 0, 0.03, 0.0005).name('wave amp');
+    fl.add(u.uWaveScale, 'value', 0.2, 4, 0.05).name('wave scale');
+    fl.add(u.uWaveSpeed, 'value', 0, 2, 0.01).name('wave speed');
+    fl.add(u.uMistAmt, 'value', 0, 1, 0.01).name('mist amount');
+    fl.add(u.uMistInner, 'value', 0, 10, 0.1).name('mist inner (x)');
+    fl.add(u.uMistOuter, 'value', 4, 20, 0.1).name('mist outer (x)');
+    fl.add(u.uMistFloor, 'value', 0, 1, 0.01).name('mist floor (min)');
+    fl.add(u.uMistLeftBoost, 'value', 0.5, 3, 0.05).name('mist left boost');
     const proxy = { base: '#' + u.color.value.getHexString() };
     fl.addColor(proxy, 'base').name('base color').onChange((v) => u.color.value.set(v));
   }
@@ -115,6 +124,13 @@ export function initSceneGui({ scene, renderer, bloomEffect, floor, projector, c
     if (medium) {
       at.add(medium.params, 'glowIntensity', 0, 3, 0.01).name('glow intensity');
     }
+    if (atmoParams?.skyFollowX !== undefined) {
+      at.add(atmoParams, 'skyFollowX', 0, 0.5, 0.005).name('sky follow x');
+      at.add(atmoParams, 'skyFollowY', 0, 0.8, 0.005).name('sky follow y');
+    }
+    at.add(u.uSwirl, 'value', 0, 2, 0.01).name('swirl amount');
+    at.add(u.uSwirlScale, 'value', 0.2, 3, 0.05).name('swirl scale');
+    at.add(u.uSwirlSpeed, 'value', 0, 0.1, 0.001).name('swirl speed');
     at.add(u.uGlowRadius, 'value', 0.05, 2, 0.01).name('glow radius');
     at.add(u.uCoreSize, 'value', 0.05, 1, 0.01).name('core size (frac)');
     at.add(u.uCoreBoost, 'value', 0, 4, 0.05).name('core boost');

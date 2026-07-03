@@ -336,8 +336,13 @@
       "uPocketPos": [-0.32, 0.08],
       "uPocketRadius": 0.68,
       "uPocketStretch": 0.8,
-      "uPocketIntensity": 0.32
+      "uPocketIntensity": 0.32,
+      "uSwirl": 0.6,
+      "uSwirlScale": 0.9,
+      "uSwirlSpeed": 0.02
     },
+    "swirlNote": "angular domain swirl (desktop only, skipped under MOBILE): sampling domain rotates by a breathing angle FIELD (fbm) → smoke curls/folds locally instead of panning in formation; plus evolution clock ev raised 0.006→0.025 and layer 2 counter-drifts against the wind (crossing layers kill the 'globe texture' read); the light kernel reads the unrotated domain",
+    "skyFollowNote": "backdrop parallax rides the ACTUAL camera position (incl. breathing): skyFollowX 0.15, skyFollowY 0.3 with Y NEGATED (camera up → sky pans down with the floor → new sky reveals from the top, camera-pan feel instead of 'boat'); the ceiling lid y also rides the parallax so the smoke ceiling pans with the sky, not the frame",
     "pocketNote": "backlight pocket — stationary second kernel in p-space behind the card, tuned subtle (0.32) and biased to the card's dark left side, so the fringe silhouettes without flattening the projector story",
     "parallaxFactor": 0.03,
     "transitionDuration": 1.2,
@@ -647,7 +652,7 @@
       "clipBias": 0.003
     },
     "uniforms": {
-      "uReflectivity": 0.0,
+      "uReflectivity": 0.05,
       "uMirror": 1.0,
       "uFloorMixStrength": 7.1,
       "uDist": 1.5,
@@ -661,8 +666,19 @@
       "uFogFar": 18.0,
       "uWashGain": 0.0,
       "uContactDark": 0.0,
-      "uGlowCol": "adopted from medium.u.uGlow by reference"
+      "uGlowCol": "adopted from medium.u.uGlow by reference",
+      "uFogCol": "adopted from medium.u.uFog by reference (mist bank color)",
+      "uWaveAmp": 0.006,
+      "uWaveScale": 1.2,
+      "uWaveSpeed": 0.5,
+      "uMistAmt": 0.5,
+      "uMistInner": 3.5,
+      "uMistOuter": 11.0,
+      "uMistFloor": 0.3,
+      "uMistLeftBoost": 1.4
     },
+    "wavesNote": "live micro-waves — slow two-axis noise scroll nudging the reflection lookup (uWaveAmp/Scale/Speed); the mirror breathes instead of reading as polished stone",
+    "mistNote": "ground mist banks flanking the card (|world x| uMistInner→uMistOuter, z-band near the card) — noise BOILS in place on its own clock (decoupled from wind advection) over a minimum-density floor (uMistFloor) so a bank thins but never vanishes; uMistLeftBoost equalizes the frame's dark side",
     "transform": {
       "position": [
         0,

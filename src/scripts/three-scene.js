@@ -74,7 +74,7 @@ let _ambient   = null;   // AmbientLight — off by default (tuned 2026-07-02); 
 let _energy = 0;
 let _prevEnergyT = 0;
 const _prevPointer = new THREE.Vector2();
-const _atmoParams = { energyGain: 0.08, energyTau: 1.4 };
+const _atmoParams = { energyGain: 0.08, energyTau: 1.4, skyFollowX: 0.15, skyFollowY: 0.3 };
 
 // Per-project environment accent (drives ground/clouds/haze/glow tint).
 const _accentFor = (idx) => ORBIT_PROJECTS[idx]?.envAccent || '#7fa0ff';
@@ -518,7 +518,11 @@ export function initScene(canvas) {
     if (_mistFront) _mistFront.update(prefersReduced ? 0 : t);
     // One medium update feeds every atmospheric layer (backdrop, veil, floor fog, card tint).
     if (_medium) _medium.update(prefersReduced ? 0 : t, prefersReduced ? 0 : _energy, mouse.x, mouse.y);
-    if (_atmo) _atmo.update(_camMouse.x * 0.03, _camMouse.y * 0.03);
+    // Sky rides the ACTUAL camera (position incl. breathing), not the mouse — the backdrop
+    // and the world-space floor then shear together as one space instead of a painted dome.
+    // Y is NEGATED: camera up → sky pattern pans down with the floor → new sky reveals from
+    // the top edge (a camera pan), instead of sky and floor diverging (the "boat" feel).
+    if (_atmo) _atmo.update(camera.position.x * _atmoParams.skyFollowX, -camera.position.y * _atmoParams.skyFollowY);
     if (_veil) _veil.update();
     if (_sideLight) _sideLight.update(prefersReduced ? 0 : _energy, mouse.x, mouse.y);
     if (_projector) _projector.update(mouse.x, mouse.y, _cardProx);

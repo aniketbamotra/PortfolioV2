@@ -42,6 +42,10 @@ const FLOOR_FRAG = /* glsl */`
   uniform float     uFogNear, uFogFar;     // distance-fog band (world units from camera)
   uniform float     uWashGain;             // glow-side ground wash strength
   uniform float     uContactDark;          // darkening under the card mass
+  uniform vec3      uFogCol;               // shared medium fog — the mist banks' color
+  uniform float     uWaveAmp, uWaveScale, uWaveSpeed;   // live micro-waves on the mirror
+  uniform float     uMistAmt, uMistInner, uMistOuter;   // ground mist flanking the card
+  uniform float     uMistFloor, uMistLeftBoost;         // min density / dark-side equalizer
   varying vec4 vUv;
   varying vec2 vLocal;
   varying vec2 vMeshUv;
@@ -62,7 +66,11 @@ const FLOOR_FRAG = /* glsl */`
     // Cursor-painted fluid ink nudges the reflection — lookup drifts with the shared wind
     // so even the ground ripples ride the same weather.
     vec2 ink = texture2D(uInk, coord.xy + uWind * uTime * 0.3).rg;
-    vec2 ruv = coord.xy + coord.z * normal.xz * 0.05 + ink * uInkWarp;
+    // Live micro-waves — a slow scrolling noise nudge on the reflection lookup so the
+    // mirror reads as a faintly breathing surface instead of polished stone.
+    vec2 wave = vec2(noise(vWorld.xz * uWaveScale + vec2(uTime * uWaveSpeed, 0.0)),
+                     noise(vWorld.xz * uWaveScale + vec2(7.3, 2.1) - uTime * uWaveSpeed * 0.7)) - 0.5;
+    vec2 ruv = coord.xy + coord.z * normal.xz * 0.05 + ink * uInkWarp + wave * uWaveAmp;
     vec4 reflectColor = texture2D(tDiffuse, ruv);
 
     // Fresnel reflectance.
@@ -94,6 +102,22 @@ const FLOOR_FRAG = /* glsl */`
     float fogF = smoothstep(uFogNear, uFogFar, dist);
     fogF = clamp(fogF * mix(0.7, 1.3, fs), 0.0, 1.0);
     col = mix(col, uBase * 0.5, fogF);
+
+    // Rolling ground mist flanking the card (the flanks read empty otherwise) — bands
+    // left+right of the card mass, colored by the medium's fog so it belongs to the same
+    // weather as the sky. The noise BOILS in place (own slow clock, decoupled from wind
+    // advection) and rides on a minimum-density floor, so a bank thins but never vanishes
+    // when a low pocket of the field passes through. Left bank gets a small gain — equal
+    // density reads dimmer on the frame's dark side.
+    float mx = abs(vWorld.x);
+    float bankX = smoothstep(uMistInner, uMistInner + 1.5, mx)
+                * (1.0 - smoothstep(uMistOuter, uMistOuter + 5.0, mx));
+    float bankZ = 1.0 - smoothstep(4.0, 10.0, abs(vWorld.z - 2.0));
+    float mn = noise(vWorld.xz * 0.28 + vec2(uTime * 0.03, -uTime * 0.02));
+    float side = mix(uMistLeftBoost, 1.0, step(0.0, vWorld.x));
+    float mist = bankX * bankZ * (uMistFloor + (1.0 - uMistFloor) * smoothstep(0.35, 0.85, mn))
+               * uMistAmt * side;
+    col = mix(col, uFogCol * 0.22, clamp(mist, 0.0, 1.0));
 
     float r = length(vLocal) / uRadius;                   // 0 centre → 1 edge
     float alpha = 1.0 - smoothstep(0.5, 0.95, r);         // trim the disc edge (color does the rest)
@@ -130,9 +154,9 @@ export function initReflectiveFloor({ scene, accent, renderer, medium } = {}) {
         textureMatrix: { value: null },        // set by Reflector
         tNormalMap:    { value: flatNormal },  // swapped for the loaded texture below
         uInk:          { value: flatInk },     // fluid dye — swapped in via setInk
-        // Tuned live 2026-07-02: reflectivity 0 → only grazing-angle fresnel reflects, so the
-        // ground reads as dark terrain with a faint horizon sheen rather than a mirror.
-        uReflectivity:     { value: 0.0 },
+        // Reflectivity 0.05 (raised 2026-07-03 from 0): a whisper of reflection at all
+        // angles on top of the grazing fresnel sheen — wet stone, still not a mirror.
+        uReflectivity:     { value: 0.05 },
         uMirror:           { value: 1.0 },     // 1 = pure reflection (base color term drops out)
         uFloorMixStrength: { value: 7.1 },     // reflection boost
         uDist:             { value: 1.6 },     // normal distortion strength
@@ -151,6 +175,17 @@ export function initReflectiveFloor({ scene, accent, renderer, medium } = {}) {
         // toneMappingExposure 0.38 instead — additive wash read as paint on the mirror.
         uWashGain:    { value: 0.0 },   // glow-side ground wash (GUI-restorable)
         uContactDark: { value: 0.0 },   // contact shadow under the card (GUI-restorable)
+        uFogCol:    { value: new THREE.Color(0xf2ddc2) }, // placeholder — medium adopted below
+        // live micro-waves on the mirror lookup
+        uWaveAmp:   { value: 0.006 },
+        uWaveScale: { value: 1.2 },
+        uWaveSpeed: { value: 0.5 },
+        // ground mist banks flanking the card
+        uMistAmt:   { value: 0.5 },
+        uMistInner: { value: 3.5 },
+        uMistOuter: { value: 11.0 },
+        uMistFloor:     { value: 0.3 },  // min bank density — thins, never vanishes
+        uMistLeftBoost: { value: 1.4 },  // dark-side equalizer
       },
       vertexShader: FLOOR_VERT,
       fragmentShader: FLOOR_FRAG,
@@ -194,6 +229,7 @@ export function initReflectiveFloor({ scene, accent, renderer, medium } = {}) {
   if (medium) {
     floor.material.uniforms.uBase = medium.u.uBase;
     floor.material.uniforms.uGlowCol = medium.u.uGlow;
+    floor.material.uniforms.uFogCol = medium.u.uFog;
     floor.material.uniforms.uWind = medium.u.uWind;
     floor.material.uniforms.uTime = medium.u.uTime;
   }
