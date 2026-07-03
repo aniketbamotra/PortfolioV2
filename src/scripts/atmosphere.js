@@ -50,6 +50,7 @@ const ATMO_FRAG = /* glsl */`
   uniform float uGlowIntensity, uGlowEnergyGain, uGlowRadius, uGlowStretch, uGlowMouseShift;
   uniform vec2  uGlowPos;
   uniform sampler2D uInk;
+  uniform float uFlipX;
   varying vec2  vUv;
 
   ${NOISE_GLSL}
@@ -62,7 +63,10 @@ const ATMO_FRAG = /* glsl */`
   #endif
 
   void main(){
-    vec2 p = (vUv - 0.5) * vec2(uAspect, 1.0) + uParallax;
+    // Mirror pass: pre-flip x so the Reflector's mirrored projective sampling cancels
+    // (glow stays on its own side of the reflection).
+    vec2 suv = vec2(mix(vUv.x, 1.0 - vUv.x, uFlipX), vUv.y);
+    vec2 p = (suv - 0.5) * vec2(uAspect, 1.0) + uParallax;
 
     // ── Shared light kernel ──
     float light = lightKernel(p, uGlowPos + uMouse * uGlowMouseShift, uGlowRadius, uGlowStretch);
@@ -91,7 +95,7 @@ const ATMO_FRAG = /* glsl */`
       float l3 = FBM(pa3 * uL3Scale + q * 0.8 + vec2(-t3, t3 * 0.6));
     #endif
 
-    float ink = texture2D(uInk, vUv).b;
+    float ink = texture2D(uInk, suv).b;
     float d = l1 * uL1Alpha
             + l2 * uL2Alpha * mix(1.0, l1 * 2.0, uL1Mix2)
             + l3 * uL3Alpha * (0.6 + uEnergy * uEnergyGain)
@@ -116,7 +120,7 @@ const ATMO_FRAG = /* glsl */`
     gl_FragColor = vec4(col, 1.0);
   }`;
 
-export function initAtmosphere({ medium, isMobile = false } = {}) {
+export function initAtmosphere({ medium, camera = null, isMobile = false } = {}) {
   // Flat black placeholder so uInk is never null before the fluid dye is attached
   // (mirrors the sky-dome/floor pattern). Zero ink until setInk swaps in the live texture.
   const flatInk = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1, THREE.RGBAFormat);
@@ -165,6 +169,7 @@ export function initAtmosphere({ medium, isMobile = false } = {}) {
       uGlowEnergyGain: { value: 0.0 },
       uGlowMouseShift: { value: 0.03 },
       uInk: { value: flatInk }, // fluid dye — swapped in via setInk
+      uFlipX: { value: 0 },     // 1 when drawn by a mirror camera (see onBeforeRender below)
     },
   });
 
@@ -172,6 +177,14 @@ export function initAtmosphere({ medium, isMobile = false } = {}) {
   const mesh = new THREE.Mesh(geometry, material);
   mesh.frustumCulled = false;
   mesh.renderOrder = -1000; // draw first — everything else paints over it
+
+  // The backdrop is a clip-space quad, so it renders IDENTICALLY for any camera — but the
+  // floor Reflector samples its mirror pass with x-mirrored projective UVs (mirror handedness),
+  // which would land the glow on the wrong side of the reflection. Render x-flipped for any
+  // camera that isn't the main one so the mirror's flip cancels out.
+  mesh.onBeforeRender = (renderer, scene, cam) => {
+    material.uniforms.uFlipX.value = (camera && cam !== camera) ? 1 : 0;
+  };
 
   const u = material.uniforms;
 

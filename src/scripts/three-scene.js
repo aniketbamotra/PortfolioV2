@@ -9,6 +9,7 @@ import { EffectComposer, RenderPass, EffectPass, BloomEffect, VignetteEffect, Ch
 import { Fluid } from '@alienkitty/alien.js/src/three/utils/Fluid.js';
 import { FluidDistortionEffect } from './fluid-distortion-effect.js';
 import { AfterimagePass } from './afterimage-pass.js';
+import { GradeEffect } from './grade-effect.js';
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { ORBIT_PROJECTS } from '../data/projects.js';
@@ -59,6 +60,7 @@ let _godRaySrc = null;   // emissive source mesh the god rays radiate from
 let _tiltShift = null;   // pmndrs TiltShiftEffect (focus band)
 let _fluidFx   = null;   // custom pmndrs Effect — full-screen ripple driven by the fluid dye
 let _afterimage = null;  // custom feedback Pass — temporal ghost trails (ref: fringe echoes)
+let _grade = null;       // final split-tone grade — one hue axis across the whole frame (ref LUT feel)
 let _mistFront = null;   // foreground fog drifting in front of the card
 let _projector = null;   // cursor-driven spotlight projecting the cover image onto the card
 let _medium    = null;   // shared atmospheric medium — colors/light/wind/clocks, one transition()
@@ -304,7 +306,9 @@ export function initScene(canvas) {
   _afterimage.enabled = !prefersReduced;
   composer.addPass(_afterimage);
   composer.addPass(new EffectPass(camera, ...passEffects));
-  composer.addPass(new EffectPass(camera, chromaticAberration, vignetteEffect, noiseEffect));
+  // Grade sits after CA, before vignette/grain — color is shaped, finish sits on top.
+  _grade = new GradeEffect();
+  composer.addPass(new EffectPass(camera, chromaticAberration, _grade, vignetteEffect, noiseEffect));
 
   _handlers.resize = () => {
     const W = window.innerWidth;
@@ -340,7 +344,7 @@ export function initScene(canvas) {
   _floor = initReflectiveFloor({ scene, renderer, accent: _accentFor(0), medium: _medium });
 
   // Screen-space atmosphere — the visible backdrop, drawn first.
-  _atmo = initAtmosphere({ medium: _medium, isMobile });
+  _atmo = initAtmosphere({ medium: _medium, camera, isMobile });
   scene.add(_atmo.mesh);
 
   // Foreground fog veil — haze over everything; seats the card, fogs the floor junction.
@@ -366,6 +370,7 @@ export function initScene(canvas) {
   _projector = initProjector({ scene });
   _projector.setImage(ORBIT_PROJECTS[currentIdx]?.coverImage || null);
   _projector.transition(_atmoFor(currentIdx).glow, { duration: 0 }); // palette tint from frame 1
+  _grade?.transition(_atmoFor(currentIdx).base, { duration: 0 });    // grade axis from frame 1
 
   // Cursor velocity → flowmap texture (card-face UV space, 128² HalfFloat RT).
   // Sampled in the cube fragment shader to distort image UVs — image "pours" on cursor drag.
@@ -388,7 +393,7 @@ export function initScene(canvas) {
     import('./scene-gui.js').then(({ initSceneGui }) => {
       _gui = initSceneGui({
         scene, renderer, bloomEffect, floor: _floor, projector: _projector, camera, camParams: _camParams,
-        fx: { godRays: _godRays, godRaySource: _godRaySrc, tiltShift: _tiltShift, fluidDistortion: _fluidFx, noise: noiseEffect, vignette: vignetteEffect, afterimage: _afterimage },
+        fx: { godRays: _godRays, godRaySource: _godRaySrc, tiltShift: _tiltShift, fluidDistortion: _fluidFx, noise: noiseEffect, vignette: vignetteEffect, afterimage: _afterimage, grade: _grade },
         fluid: _fluid, sky: _sky,
         atmosphere: _atmo, sideLight: _sideLight, atmoParams: _atmoParams, ambient: _ambient,
         medium: _medium, fogVeil: _veil,
@@ -789,6 +794,7 @@ export function setProject(idx) {
   _medium?.transition(_atmoFor(idx));   // one tween — backdrop, veil, floor fog, card tint follow
   _sideLight?.transition(_atmoFor(idx).glow);
   _projector?.transition(_atmoFor(idx).glow);
+  _grade?.transition(_atmoFor(idx).base);
   _updateProjectUI(idx);
 }
 

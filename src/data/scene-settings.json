@@ -220,6 +220,13 @@
       "samples": 60,
       "clampMax": 1.0
     },
+    "grade": {
+      "note": "final split-tone grade (grade-effect.js) in the last EffectPass (CA → grade → vignette → grain). Desaturates toward neutral then applies a luminance temperature ramp: uShadowTint (tweens to each project's atmo.base hue at HSL sat×0.35 / L 0.62) → uHighlightTint warm white. The 'film LUT' unifying all hue families (ref: one-hue world).",
+      "shadowTint": "#b98a6a (rest default; per-project via transition)",
+      "highlightTint": "#fff6ea",
+      "desat": 0.35,
+      "amount": 0.8
+    },
     "afterimage": {
       "note": "custom feedback Pass (afterimage-pass.js) between RenderPass and bloom — max(cur, prev×damp) ping-pong; trails glow. Disabled under reduced motion. GUI: trails enabled / trail length.",
       "damp": 0.8,
@@ -281,6 +288,7 @@
     }
   },
   "atmosphere": {
+    "mirrorFix": "uFlipX — backdrop is a clip-space quad, identical in any camera; onBeforeRender sets uFlipX=1 for non-main cameras so the floor Reflector's x-mirrored projective sampling cancels (glow reflects on its own side).",
     "note": "Screen-space backdrop (atmosphere.js) — absorption/scattering cloudscape. Three wind-advected noise layers (depth parallax x1/x0.6/x1.6); transmittance = exp(-density*uAbsorb); backdrop energized only by the light kernel; in-scatter = fog color * light * (1-transmittance); hot core where dense fog meets the light. Darkness away from the light falls out of the math. Colors/kernel/wind/clocks adopted from atmosphereMedium by reference.",
     "mobileDefine": "MOBILE — fbm3 everywhere, layer 3 skipped (isMobile = width < 768)",
     "cursorEnergy": {

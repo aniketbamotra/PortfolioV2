@@ -215,8 +215,20 @@ export function initSceneGui({ scene, renderer, bloomEffect, floor, projector, c
     if (bloomEffect.luminanceMaterial) {
       post.add(bloomEffect.luminanceMaterial, 'threshold', 0, 1, 0.01).name('bloom threshold');
     }
+    if (bloomEffect.mipmapBlurPass) {
+      post.add(bloomEffect.mipmapBlurPass, 'radius', 0.1, 1, 0.01).name('bloom radius (halation)');
+    }
   }
   if (renderer) post.add(renderer, 'toneMappingExposure', 0, 3, 0.01).name('exposure');
+  if (fx?.grade) {
+    const g = fx.grade;
+    addEffectToggle(post, g, 'grade enabled');
+    post.add(g, 'amount', 0, 1, 0.01).name('grade amount');
+    post.add(g, 'desat', 0, 1, 0.01).name('grade desat');
+    const gp = { shadow: '#' + g.shadowTint.getHexString(), highlight: '#' + g.highlightTint.getHexString() };
+    post.addColor(gp, 'shadow').name('grade shadow tint').onChange((v) => g.shadowTint.set(v));
+    post.addColor(gp, 'highlight').name('grade highlight tint').onChange((v) => g.highlightTint.set(v));
+  }
   if (fx?.afterimage) {
     post.add(fx.afterimage, 'enabled').name('trails enabled');
     post.add(fx.afterimage, 'damp', 0, 0.97, 0.01).name('trail length');
