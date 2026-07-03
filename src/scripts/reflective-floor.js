@@ -1,25 +1,29 @@
 // Reflective floor below the voxel card — a circular mirror built on three's Reflector
 // (real per-frame mirror render: it re-renders the scene from a mirrored camera into a
-// render target, with an oblique clip plane at the floor). The default Reflector shader is
-// swapped for a custom liquid-metal one: a tiling normal-map texture (two layers scrolled in
-// opposite directions for flow) distorts the reflection, plus contrast + colour tint + Fresnel
-// sheen, and a radial alpha fade so the disc dissolves into the scene.
+// render target, with an oblique clip plane at the floor). Shader follows the reference
+// (rogierdeboeve.com, extracted in brainstron/reference_vals.md): a dark-gray planar mirror
+// whose reflection is distorted by ONE static soft normal map and boosted ×uFloorMixStrength.
+// All visible floor motion comes from the reflected animated atmosphere — the surface itself
+// is still. Reads as dark misty terrain, not liquid metal.
 // Exports: initReflectiveFloor({ scene, accent, renderer }) → { mesh, update(time), setColor(hex), destroy() }
 
 import * as THREE from 'three';
 import { Reflector } from 'three/examples/jsm/objects/Reflector.js';
+import { NOISE_GLSL } from './shaders/noise-glsl.js';
 
 const FLOOR_VERT = /* glsl */`
   uniform mat4 textureMatrix;
   varying vec4 vUv;
   varying vec2 vLocal;
+  varying vec2 vMeshUv;
   varying vec3 vWorld;
   #include <common>
   #include <logdepthbuf_pars_vertex>
   void main(){
-    vUv    = textureMatrix * vec4(position, 1.0);
-    vLocal = position.xy;                       // circle lies in local XY (before -PI/2 tilt)
-    vWorld = (modelMatrix * vec4(position, 1.0)).xyz;
+    vUv     = textureMatrix * vec4(position, 1.0);
+    vLocal  = position.xy;                      // circle lies in local XY (before -PI/2 tilt)
+    vMeshUv = uv;                               // static normal-map lookup (one map across the disc)
+    vWorld  = (modelMatrix * vec4(position, 1.0)).xyz;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
     #include <logdepthbuf_vertex>
   }`;
@@ -28,43 +32,56 @@ const FLOOR_FRAG = /* glsl */`
   uniform vec3      color;
   uniform sampler2D tDiffuse;
   uniform sampler2D tNormalMap;
-  uniform float     uReflectivity, uRadius, uTime, uDistort, uContrast, uFlow, uTint, uNormalRepeat;
+  uniform sampler2D uInk;
+  uniform float     uReflectivity, uMirror, uFloorMixStrength, uDist, uRadius, uInkWarp;
+  uniform vec2      uNormalScale;
+  uniform vec3      uBase;                 // shared medium base — the sky the ground dissolves into
+  uniform vec2      uWind;                 // shared medium wind
+  uniform float     uTime;                 // shared medium clock
+  uniform float     uFogNear, uFogFar;     // distance-fog band (world units from camera)
   varying vec4 vUv;
   varying vec2 vLocal;
+  varying vec2 vMeshUv;
   varying vec3 vWorld;
   #include <logdepthbuf_pars_fragment>
+
+  ${NOISE_GLSL}
 
   void main(){
     #include <logdepthbuf_fragment>
 
-    // Two tiling samples of the normal map, scrolled in opposite directions → flowing liquid
-    // metal. The combined tangent-space normal warps the reflection (molten distortion).
-    float t = uTime * uFlow;
-    vec2 nuv = vLocal * uNormalRepeat;
-    vec3 n1 = texture2D(tNormalMap, nuv +        vec2( t * 0.030,  t * 0.020)).xyz * 2.0 - 1.0;
-    vec3 n2 = texture2D(tNormalMap, nuv * 1.7 +  vec2(-t * 0.025,  t * 0.018)).xyz * 2.0 - 1.0;
-    vec3 n  = normalize(n1 + n2);
+    // Reference formula: one STATIC normal sample builds a soft terrain normal; the
+    // reflection is offset by it in projected space (coord.z scales the parallax).
+    vec4 nc = texture2D(tNormalMap, vMeshUv * uNormalScale);
+    vec3 normal = normalize(vec3(nc.r * uDist - uDist * 0.5, nc.b, nc.g * uDist - uDist * 0.5));
+    vec3 coord = vUv.xyz / vUv.w;
 
-    vec2 proj = vUv.xy / vUv.w + n.xy * uDistort;
-    vec3 refl = texture2D(tDiffuse, proj).rgb;
+    // Cursor-painted fluid ink nudges the reflection — lookup drifts with the shared wind
+    // so even the ground ripples ride the same weather.
+    vec2 ink = texture2D(uInk, coord.xy + uWind * uTime * 0.3).rg;
+    vec2 ruv = coord.xy + coord.z * normal.xz * 0.05 + ink * uInkWarp;
+    vec4 reflectColor = texture2D(tDiffuse, ruv);
 
-    // Metals tint and harden their reflection: contrast + colour tint.
-    refl = pow(max(refl, 0.0), vec3(uContrast));
-    vec3 metal = refl * mix(vec3(1.0), color, uTint);
+    // Fresnel reflectance.
+    vec3 toEye = normalize(cameraPosition - vWorld);
+    float theta = max(dot(toEye, normal), 0.0);
+    float reflectance = max(0.01, min(uReflectivity + (1.0 - uReflectivity) * pow(1.0 - theta, 5.0), 1.0));
+    reflectColor = mix(vec4(0.0), reflectColor, reflectance);
 
-    // Fresnel sheen — brighten the *reflection* at grazing angles (multiplicative, so dark
-    // areas stay dark; a flat additive white here reads as fog at this shallow camera angle).
-    vec3 viewDir = normalize(cameraPosition - vWorld);
-    float fres = pow(1.0 - max(dot(viewDir, vec3(0.0, 1.0, 0.0)), 0.0), 5.0);
-    metal *= 1.0 + fres * 0.5;
+    // Dark base × boosted reflection — hue and motion come from the reflected atmosphere.
+    vec3 col = color * ((1.0 - min(1.0, uMirror)) + reflectColor.rgb * uFloorMixStrength);
 
-    // Tight specular glints on the steeper faces, faded out at grazing angles.
-    metal += smoothstep(0.5, 0.95, 1.0 - n.z) * 0.12 * (1.0 - fres);
-
-    vec3 col = mix(color * 0.25, metal, uReflectivity);   // dark metal base under it all
+    // Participate in the medium: far ground converges to the medium's base color (the actual
+    // horizon kill — ground and sky meet at the same value). Fog density churns with a
+    // 1-octave sample of the shared field so the ground haze shares the sky's weather.
+    float dist = length(vWorld - cameraPosition);
+    float fs = noise(vWorld.xz * 0.15 + uWind * uTime * 5.0);
+    float fogF = smoothstep(uFogNear, uFogFar, dist);
+    fogF = clamp(fogF * mix(0.7, 1.3, fs), 0.0, 1.0);
+    col = mix(col, uBase * 0.5, fogF);
 
     float r = length(vLocal) / uRadius;                   // 0 centre → 1 edge
-    float alpha = 1.0 - smoothstep(0.35, 1.0, r);         // dissolve the disc into the scene
+    float alpha = 1.0 - smoothstep(0.5, 0.95, r);         // trim the disc edge (color does the rest)
 
     gl_FragColor = vec4(col, alpha);
 
@@ -72,7 +89,7 @@ const FLOOR_FRAG = /* glsl */`
     #include <colorspace_fragment>
   }`;
 
-export function initReflectiveFloor({ scene, accent, renderer } = {}) {
+export function initReflectiveFloor({ scene, accent, renderer, medium } = {}) {
   const radius = 30;
 
   // Flat-normal placeholder (RGB 128,128,255 → tangent +Z) so the shader samples a flat surface
@@ -80,9 +97,13 @@ export function initReflectiveFloor({ scene, accent, renderer } = {}) {
   const flatNormal = new THREE.DataTexture(new Uint8Array([128, 128, 255, 255]), 1, 1, THREE.RGBAFormat);
   flatNormal.needsUpdate = true;
 
+  // Flat (black) ink placeholder → zero warp until the fluid dye is attached via setInk.
+  const flatInk = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1, THREE.RGBAFormat);
+  flatInk.needsUpdate = true;
+
   const geometry = new THREE.CircleGeometry(radius, 128);
   const floor = new Reflector(geometry, {
-    color: 0x111111,            // dark base the reflection is tinted toward
+    color: 0x3a3a3a,            // dark gray the boosted reflection multiplies
     textureWidth: 1024,
     textureHeight: 1024,
     clipBias: 0.003,
@@ -93,14 +114,23 @@ export function initReflectiveFloor({ scene, accent, renderer } = {}) {
         tDiffuse:      { value: null },        // set by Reflector (mirror render target)
         textureMatrix: { value: null },        // set by Reflector
         tNormalMap:    { value: flatNormal },  // swapped for the loaded texture below
-        uReflectivity: { value: 1.0 },
-        uRadius:       { value: radius },
-        uDistort:      { value: 0.025 },  // molten warp strength (how hard the normal warps)
-        uContrast:     { value: 1.09 },   // metallic reflection hardness
-        uFlow:         { value: 0.31 },   // flow animation speed
-        uTint:         { value: 0.82 },   // how much the metal colours the reflection
-        uNormalRepeat: { value: 0.1 },    // normal-map tiling density across the disc
-        uTime:         { value: 0 },
+        uInk:          { value: flatInk },     // fluid dye — swapped in via setInk
+        // Tuned live 2026-07-02: reflectivity 0 → only grazing-angle fresnel reflects, so the
+        // ground reads as dark terrain with a faint horizon sheen rather than a mirror.
+        uReflectivity:     { value: 0.0 },
+        uMirror:           { value: 1.0 },     // 1 = pure reflection (base color term drops out)
+        uFloorMixStrength: { value: 6.8 },     // reflection boost
+        uDist:             { value: 1.5 },     // normal distortion strength
+        uNormalScale:      { value: new THREE.Vector2(1.6, 1.6) },
+        uRadius:           { value: 23 },
+        uInkWarp:          { value: 0.0 },     // cursor-ink reflection nudge (off, tuned 2026-07-03)
+        // medium participation — placeholders; the shared objects are adopted below
+        // (Reflector clones this uniform table, so by-reference adoption must happen after).
+        uBase:    { value: new THREE.Color(0x111111) },
+        uWind:    { value: new THREE.Vector2() },
+        uTime:    { value: 0 },
+        uFogNear: { value: 4.0 },
+        uFogFar:  { value: 18.0 },
       },
       vertexShader: FLOOR_VERT,
       fragmentShader: FLOOR_FRAG,
@@ -135,16 +165,25 @@ export function initReflectiveFloor({ scene, accent, renderer } = {}) {
   floor.material.depthWrite  = false;
   floor.renderOrder = -1;           // after the dome (-1000), before the card
 
-  // The floor stays a dark base (#111111); per-project accent only nudges it subtly so it
-  // doesn't wash back to grey.
-  if (accent) floor.material.uniforms.color.value.lerp(new THREE.Color(accent), 0.15);
+  // Floor color stays fixed (reference behavior): output = color × reflection × mixStrength,
+  // so per-project hue arrives through the reflected atmosphere — no accent tinting needed.
+  void accent;
+
+  // Adopt the shared medium's uniform objects (post-construction — Reflector cloned the
+  // table above). The distance fog then recolors with every medium.transition() for free.
+  if (medium) {
+    floor.material.uniforms.uBase = medium.u.uBase;
+    floor.material.uniforms.uWind = medium.u.uWind;
+    floor.material.uniforms.uTime = medium.u.uTime;
+  }
 
   scene.add(floor);
 
   return {
     mesh: floor,
-    update(time) { floor.material.uniforms.uTime.value = time; },
-    setColor(hex) { floor.material.uniforms.color.value.set(0x111111).lerp(new THREE.Color(hex), 0.15); },
-    destroy() { floor.dispose(); geometry.dispose(); flatNormal.dispose(); _normalTex?.dispose(); scene.remove(floor); },
+    update() {},                 // surface is static — motion comes from the reflected sky
+    setColor() {},               // fixed dark-gray base (see note above)
+    setInk(uniform) { floor.material.uniforms.uInk = uniform; }, // adopt the live { value } dye object
+    destroy() { floor.dispose(); geometry.dispose(); flatNormal.dispose(); flatInk.dispose(); _normalTex?.dispose(); scene.remove(floor); },
   };
 }

@@ -5,8 +5,12 @@
 // Exports: initScene(canvas), setProject(idx), setPaused(paused), destroy()
 
 import * as THREE from 'three';
-import { EffectComposer, RenderPass, EffectPass, BloomEffect, VignetteEffect, ChromaticAberrationEffect, DepthOfFieldEffect } from 'postprocessing';
+import { EffectComposer, RenderPass, EffectPass, BloomEffect, VignetteEffect, ChromaticAberrationEffect, GodRaysEffect, TiltShiftEffect, NoiseEffect, BlendFunction } from 'postprocessing';
+import { Fluid } from '@alienkitty/alien.js/src/three/utils/Fluid.js';
+import { FluidDistortionEffect } from './fluid-distortion-effect.js';
+import { AfterimagePass } from './afterimage-pass.js';
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { ORBIT_PROJECTS } from '../data/projects.js';
 import { initEnvironment } from './environment.js';
 import { initSkyDome } from './sky-dome.js';
@@ -15,9 +19,19 @@ import { Wobble } from '@alienkitty/alien.js/src/three/utils/Wobble.js';
 import { Flowmap } from '@alienkitty/alien.js/src/three/utils/Flowmap.js';
 import { initMistFront } from './mist-front.js';
 import { initProjector } from './spot-projector.js';
+import { initAtmosphere, DEFAULT_ATMO } from './atmosphere.js';
+import { initAtmosphereMedium } from './atmosphere-medium.js';
+import { initFogVeil } from './fog-veil.js';
+import { initSideLight } from './side-light.js';
+import gsap from 'gsap';
 
 // Sky source: 'exr' = sky_env.exr (72 MB, static) · 'dome' = procedural animated dome (no asset).
 const SKY_MODE = 'dome';
+// The screen-space atmosphere (atmosphere.js) replaced the dome as the visible backdrop and
+// the god rays / mist-front as the light-and-haze story. Modules stay in the repo, gated here.
+const USE_SKY_DOME   = false;
+const ENABLE_GODRAYS = false;
+const USE_MIST_FRONT = false;
 import { initCloudLayer } from './cloud-layer.js';
 
 // The scene is built imperatively once (initScene runs on page load). Vite HMR hot-swaps this
@@ -38,11 +52,32 @@ let _floor     = null;   // reflective floor below the card
 let _wobble    = null;   // alien.js Wobble — 3D Perlin float for cardGroup
 let _flowmap   = null;   // alien.js Flowmap — cursor velocity → UV distortion texture
 const _prevFlowMouse = new THREE.Vector2(); // tracks last flowmap mouse for velocity delta
+let _fluid     = null;   // alien.js Fluid — cursor-splatted ink sim → shared noise/dye texture
+const _prevSplat = new THREE.Vector2(-1, -1); // last screen-space (0-1) pointer for splat velocity
+let _godRays   = null;   // pmndrs GodRaysEffect (volumetric shafts)
+let _godRaySrc = null;   // emissive source mesh the god rays radiate from
+let _tiltShift = null;   // pmndrs TiltShiftEffect (focus band)
+let _fluidFx   = null;   // custom pmndrs Effect — full-screen ripple driven by the fluid dye
+let _afterimage = null;  // custom feedback Pass — temporal ghost trails (ref: fringe echoes)
 let _mistFront = null;   // foreground fog drifting in front of the card
 let _projector = null;   // cursor-driven spotlight projecting the cover image onto the card
+let _medium    = null;   // shared atmospheric medium — colors/light/wind/clocks, one transition()
+let _atmo      = null;   // screen-space backdrop (absorption/scattering cloudscape)
+let _veil      = null;   // foreground fog veil — haze over card/floor, seats everything
+let _sideLight = null;   // real PointLight keying the card to the atmosphere's glow region
+let _ambient   = null;   // AmbientLight — off by default (tuned 2026-07-02); GUI can re-enable
+
+// Cursor energy — accumulated pointer speed with exponential decay; drives the atmosphere's
+// fog density / glow swell and the side light. Frame-rate independent (integrated in _tick).
+let _energy = 0;
+let _prevEnergyT = 0;
+const _prevPointer = new THREE.Vector2();
+const _atmoParams = { energyGain: 0.08, energyTau: 1.4 };
 
 // Per-project environment accent (drives ground/clouds/haze/glow tint).
 const _accentFor = (idx) => ORBIT_PROJECTS[idx]?.envAccent || '#7fa0ff';
+// Per-project atmosphere palette (base / fog / glow / smoke).
+const _atmoFor = (idx) => ORBIT_PROJECTS[idx]?.atmo || DEFAULT_ATMO;
 let isMobile   = false;
 
 let _cardFaceAspect = 16 / 10;
@@ -54,6 +89,7 @@ let _curPos   = null;  // base cube position (matrix written once; shader animat
 let _scaleArr = null;  // per-instance uniform scale
 let _vox      = null;  // per-cube (depthNorm, rand, lum) → D2 motion/visibility
 let _colRand  = null;  // per-COLUMN random (same for all 6 depth cubes in a cell) → whole-column cull
+let _runRand  = null;  // per-RUN random (shared by ~3 adjacent cells in a row) → edge cull in horizontal dashes (ref)
 let _revealArr  = null;  // per-cube eased reveal 0→1 (asymmetric attack/release → smooth fade-out)
 let _revealAttr = null;  // InstancedBufferAttribute wrapping _revealArr (uploaded per frame)
 let _bumpArr    = null;  // per-cube eased bump height 0→1 (fast attack, slow release → slow settle)
@@ -80,11 +116,13 @@ let _coverTex = null;                 // current cover as a THREE.Texture (C2 ma
 // Per-cube reveal from cursor distance: idle = soft atmospheric ghost, near cursor
 // = sharp readable image tiles. Driven in the shader; cursor projected to card-local.
 const REVEAL_RADIUS = 2.2;  // local units (card face ~4 × 2.48) — crisp-lens size
-const IDLE_FLOOR    = 1.0;  // full exposure everywhere — image stays sharp without hover
-let _revealU = null;        // shader.uniforms ref (uCursor / uHover updated per frame)
+const IDLE_FLOOR    = 0.32; // idle = dark ghost (ref: card darker than fog, bright core only near cursor)
+let _revealU = null;        // persistent cube uniform table (uCursor / uHover updated per frame)
+let _cubeU   = null;        // built on first compile, re-assigned into every recompile (see _patchCube)
 const _cursor = new THREE.Vector2(0, 0);  // smoothed cursor in card-local face coords
 let _hover = 0;                           // 0→1 presence (fades when leaving the card)
 let _hoverTarget = 0;
+let _cardProx = 0;                        // 0→1 cursor proximity to the card face (gates the projector)
 const _camMouse = new THREE.Vector2();    // slower-smoothed mouse for camera parallax
 const _raycaster = new THREE.Raycaster();
 const _revealPlane = new THREE.Plane();
@@ -117,31 +155,31 @@ const LIGHTING_PRESETS = [
   {
     ambient: 0x1a2238, ambientInt: 0.5,
     spot: 0xdfe6ff, spotInt: 30, spotPos: [ 2, 4, 4],
-    fog: 0x03030a, fogDensity: 0.014,
+    fog: 0x04040c, fogDensity: 0.007, // matches atmo.base — scene fog never fights the backdrop
   },
   // 1 — Particles — electric blue
   {
     ambient: 0x05050f, ambientInt: 0.40,
     spot: 0xaabbff, spotInt: 46, spotPos: [-2, 4, 4],
-    fog: 0x020207, fogDensity: 0.020,
+    fog: 0x030310, fogDensity: 0.010,
   },
   // 2 — Brand — warm emerald
   {
     ambient: 0x040a05, ambientInt: 0.40,
     spot: 0x55ddaa, spotInt: 44, spotPos: [ 1, 5, 4],
-    fog: 0x020605, fogDensity: 0.016,
+    fog: 0x020806, fogDensity: 0.008,
   },
   // 3 — Analytics — deep navy
   {
     ambient: 0x020408, ambientInt: 0.40,
     spot: 0x5577cc, spotInt: 48, spotPos: [ 3, 4, 4],
-    fog: 0x010205, fogDensity: 0.022,
+    fog: 0x020409, fogDensity: 0.011,
   },
   // 4 — Experiments — warm amber
   {
     ambient: 0x0a0600, ambientInt: 0.40,
     spot: 0xffaa44, spotInt: 48, spotPos: [ 2, 3, 5],
-    fog: 0x060300, fogDensity: 0.016,
+    fog: 0x0a0501, fogDensity: 0.008,
   },
 ];
 
@@ -160,7 +198,10 @@ export function initScene(canvas) {
   isMobile = window.innerWidth < 768;
   renderer.setPixelRatio(Math.min(devicePixelRatio, isMobile ? 1.5 : 2));
   renderer.toneMapping         = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
+  // Tuned 2026-07-02: exposure 0. Scene materials render into the composer's RT (no tone
+  // mapping applied there), so this only affects shaders that opt in via tonemapping includes
+  // — in practice it kills the floor's tonemapped output toward black, part of the tuned look.
+  renderer.toneMappingExposure = 0;
   renderer.outputColorSpace    = THREE.SRGBColorSpace;
 
   scene = new THREE.Scene();
@@ -169,7 +210,7 @@ export function initScene(canvas) {
   // reads as atmosphere, while environmentIntensity drives the lighting independently.
   scene.backgroundBlurriness = 0.35;
   scene.backgroundIntensity  = 0.5;
-  scene.environmentIntensity = 0.05;
+  scene.environmentIntensity = 0; // IBL off (tuned look: the projector is the only card light)
 
   if (SKY_MODE === 'exr') {
     // Environment map (IBL) from the sky EXR — image-based lighting + visible sky.
@@ -185,21 +226,23 @@ export function initScene(canvas) {
       _pmrem.dispose();
     });
   } else {
-    // Procedural animated sky dome is the *visible* backdrop, but the card is *lit* by the
-    // real sky EXR (richer, directional IBL than a flat dome snapshot). The dome snapshot is
-    // used as an instant placeholder so the first frame isn't unlit while the EXR loads.
-    _sky = initSkyDome({ accent: _accentFor(0), renderer });
-    scene.add(_sky.mesh);
-    scene.background = null; // the dome itself is the backdrop
+    // The screen-space atmosphere (added below) is the visible backdrop; the card is *lit* by
+    // the real sky EXR (IBL only — nothing visible). The dome path is kept behind USE_SKY_DOME.
+    scene.background = null;
 
     const _pmrem = new THREE.PMREMGenerator(renderer);
     _pmrem.compileEquirectangularShader();
-    scene.environment = _pmrem.fromScene(scene, 0.04).texture; // placeholder IBL from the dome
+
+    if (USE_SKY_DOME) {
+      _sky = initSkyDome({ accent: _accentFor(0), renderer });
+      scene.add(_sky.mesh);
+      scene.environment = _pmrem.fromScene(scene, 0.04).texture; // placeholder IBL from the dome
+    }
 
     new EXRLoader().load('/assets/sky_env.exr', (tex) => {
       tex.mapping = THREE.EquirectangularReflectionMapping;
       const envRT = _pmrem.fromEquirectangular(tex);
-      scene.environment = envRT.texture; // swap to the EXR for lighting; dome stays visible
+      scene.environment = envRT.texture; // EXR drives lighting; the backdrop stays procedural
       tex.dispose();
       _pmrem.dispose();
     });
@@ -210,20 +253,58 @@ export function initScene(canvas) {
   camera.lookAt(0, 0, 0);
 
   // Post-processing — bloom + vignette, plus DOF + chromatic aberration (cinematic).
-  bloomEffect = new BloomEffect({ intensity: 0.5, luminanceThreshold: 0.72, luminanceSmoothing: 0.7, mipmapBlur: true, radius: 0.6 });
-  const vignetteEffect = new VignetteEffect({ darkness: 0.55, offset: 0.35 });
+  bloomEffect = new BloomEffect({ intensity: 1.45, luminanceThreshold: 0.23, luminanceSmoothing: 0.7, mipmapBlur: true, radius: 0.6 });
+  const vignetteEffect = new VignetteEffect({ darkness: 0.67, offset: 0 });
+  // Film grain — OVERLAY keeps grain visible in shadows (SCREEN only lifts; premultiplied
+  // grain vanishes in a mostly-dark frame). Tuned 2026-07-03: OFF by default (blend SKIP);
+  // _originalBlend lets the GUI toggle restore the intended blend mode.
+  const noiseEffect = new NoiseEffect({ blendFunction: BlendFunction.OVERLAY, premultiply: false });
+  noiseEffect.blendMode.opacity.value = 0.161;
+  noiseEffect._originalBlend = BlendFunction.OVERLAY;
+  noiseEffect.blendMode.blendFunction = BlendFunction.SKIP;
   const chromaticAberration = new ChromaticAberrationEffect({
     offset: new THREE.Vector2(0.0012, 0.0012), radialModulation: true, modulationOffset: 0.15,
   });
-  const effects = [bloomEffect, chromaticAberration, vignetteEffect];
-  if (!isMobile) {
-    // DOF makes the near/far scattered tiles blur while the card mid stays sharp.
-    const dof = new DepthOfFieldEffect(camera, { worldFocusDistance: 6.4, worldFocusRange: 1.8, bokehScale: 2.0 });
-    effects.unshift(dof);
+  // God-ray source — a small emissive sphere behind/above the card the shafts radiate from.
+  // Must not write depth and be flagged transparent (per GodRaysEffect contract).
+  // Disabled: the atmosphere's side glow is the light story now (gated by ENABLE_GODRAYS).
+  if (ENABLE_GODRAYS) {
+    _godRaySrc = new THREE.Mesh(
+      new THREE.SphereGeometry(1.4, 24, 24),
+      new THREE.MeshBasicMaterial({ color: 0xbcd0ff, transparent: true, depthWrite: false }),
+    );
+    _godRaySrc.position.set(0, 3.2, -9);
+    _godRaySrc.frustumCulled = false;
+    scene.add(_godRaySrc);
+    _godRays = new GodRaysEffect(camera, _godRaySrc, {
+      density: 0.92, decay: 0.92, weight: 0.5, exposure: 0.5, samples: 60, clampMax: 1.0,
+    });
   }
+
+  // Full-screen ripple from the fluid dye (texture attached once _fluid exists, below).
+  _fluidFx = new FluidDistortionEffect({ strength: 0.005 });
+
+  // Tilt-shift focus band — OFF by default (tuned 2026-07-03); GUI toggle restores it.
+  _tiltShift = new TiltShiftEffect({ offset: 0.0, focusArea: 0.6, feather: 0.25 });
+  _tiltShift._originalBlend = _tiltShift.blendMode.blendFunction;
+  _tiltShift.blendMode.blendFunction = BlendFunction.SKIP;
+
+  // ChromaticAberrationEffect is a CONVOLUTION effect, which postprocessing refuses to merge
+  // into the same EffectPass as the UV-transforming FluidDistortionEffect (mainUv). So the
+  // chain is split at that boundary: everything up to tilt-shift in one pass, then CA+vignette
+  // in a second. Effect order across the two passes matches the original single-pass intent.
+  // DOF removed — it gaussian-blurred the hero card into mush. The reference keeps the card
+  // the sharpest thing in frame; all softness lives in the atmosphere.
+  const passEffects = [bloomEffect, ...(_godRays ? [_godRays] : []), _fluidFx, _tiltShift];
   composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
-  composer.addPass(new EffectPass(camera, ...effects));
+  // Afterimage feedback BEFORE bloom — ghost trails glow like live pixels (ref).
+  // Motion-derived, so reduced-motion ships it disabled.
+  _afterimage = new AfterimagePass({ damp: 0.8 });
+  _afterimage.enabled = !prefersReduced;
+  composer.addPass(_afterimage);
+  composer.addPass(new EffectPass(camera, ...passEffects));
+  composer.addPass(new EffectPass(camera, chromaticAberration, vignetteEffect, noiseEffect));
 
   _handlers.resize = () => {
     const W = window.innerWidth;
@@ -250,27 +331,70 @@ export function initScene(canvas) {
   // Disabled for now — cloudA/B/C textures off; the procedural dome carries the sky.
   // _cloud = initCloudLayer({ scene, camera, isMobile, accent: _accentFor(0) });
 
-  // Reflective floor below the card — circular mirror (three Reflector) with ripple + fade.
-  _floor = initReflectiveFloor({ scene, renderer, accent: _accentFor(0) });
+  // Shared atmospheric medium — every layer below adopts its uniform objects by reference;
+  // one _medium.transition() recolors backdrop + veil + floor fog + card tint together.
+  _medium = initAtmosphereMedium({ palette: _atmoFor(0) });
 
-  // Foreground fog — soft haze drifting in front of the card for depth/separation.
-  _mistFront = initMistFront({ accent: _accentFor(0) });
-  scene.add(_mistFront.mesh);
+  // Reflective floor below the card — circular mirror (three Reflector); its distance fog
+  // converges the far ground to the medium's base color (the horizon dissolves).
+  _floor = initReflectiveFloor({ scene, renderer, accent: _accentFor(0), medium: _medium });
+
+  // Screen-space atmosphere — the visible backdrop, drawn first.
+  _atmo = initAtmosphere({ medium: _medium, isMobile });
+  scene.add(_atmo.mesh);
+
+  // Foreground fog veil — haze over everything; seats the card, fogs the floor junction.
+  _veil = initFogVeil({ medium: _medium, isMobile });
+  scene.add(_veil.mesh);
+
+  // Real side light matching the glow — rims the card so it agrees with the bright edge.
+  _sideLight = initSideLight({ scene });
+  _sideLight.transition(_atmoFor(0).glow, { duration: 0 });
+
+  // Ambient light — off in the tuned look (the white-fog atmosphere + projector carry the
+  // scene). Kept in the scene at 0 so the GUI can dial it back in.
+  _ambient = new THREE.AmbientLight(0xffffff, 0);
+  scene.add(_ambient);
+
+  // Foreground fog — retired: the atmosphere's fog layer carries the haze now.
+  if (USE_MIST_FRONT) {
+    _mistFront = initMistFront({ accent: _accentFor(0) });
+    scene.add(_mistFront.mesh);
+  }
 
   // Cursor-driven projector — casts the cover image onto the card (reverse parallax).
   _projector = initProjector({ scene });
   _projector.setImage(ORBIT_PROJECTS[currentIdx]?.coverImage || null);
-
-  // Dev-only scene/env controls — lazy-loaded so the GUI never ships to normal visitors.
-  if (import.meta.env.DEV || location.search.includes('lights')) {
-    import('./scene-gui.js').then(({ initSceneGui }) => {
-      _gui = initSceneGui({ scene, renderer, bloomEffect, floor: _floor, projector: _projector, camera, camParams: _camParams });
-    });
-  }
+  _projector.transition(_atmoFor(currentIdx).glow, { duration: 0 }); // palette tint from frame 1
 
   // Cursor velocity → flowmap texture (card-face UV space, 128² HalfFloat RT).
   // Sampled in the cube fragment shader to distort image UVs — image "pours" on cursor drag.
   _flowmap = new Flowmap(renderer, { size: 128, falloff: 0.20, alpha: 1, dissipation: 0.97 });
+
+  // Cursor-splatted fluid ink → a shared dye texture that drives the dome mist/displacement,
+  // the floor warp, and the full-screen ripple. Exposes `.uniform` ({ value }) like Flowmap.
+  _fluid = new Fluid(renderer, {
+    simRes: 128, dyeRes: 512, densityDissipation: 0.9, velocityDissipation: 0.9,
+    pressureDissipation: 0.8, curlStrength: 50, radius: 0.6,
+  });
+  // Consumers adopt the live uniform object once — it always reflects the current dye frame.
+  _sky?.setInk(_fluid.uniform);
+  _floor?.setInk(_fluid.uniform);
+  _atmo?.setInk(_fluid.uniform);
+  if (_fluidFx) _fluidFx.map = _fluid.uniform.value;
+
+  // Dev-only scene/env controls — lazy-loaded so the GUI never ships to normal visitors.
+  if (import.meta.env.DEV || location.search.includes('lights')) {
+    import('./scene-gui.js').then(({ initSceneGui }) => {
+      _gui = initSceneGui({
+        scene, renderer, bloomEffect, floor: _floor, projector: _projector, camera, camParams: _camParams,
+        fx: { godRays: _godRays, godRaySource: _godRaySrc, tiltShift: _tiltShift, fluidDistortion: _fluidFx, noise: noiseEffect, vignette: vignetteEffect, afterimage: _afterimage },
+        fluid: _fluid, sky: _sky,
+        atmosphere: _atmo, sideLight: _sideLight, atmoParams: _atmoParams, ambient: _ambient,
+        medium: _medium, fogVeil: _veil,
+      });
+    });
+  }
 
   _buildVoxelCard(); // async — fetches cube_positions.json then builds the InstancedMesh
 
@@ -325,6 +449,11 @@ export function initScene(canvas) {
       camera.position.x = _camMouse.x * _camParams.travelX;
       camera.position.y = cy;
       camera.position.z = CAM_REST_Z + cy * _camParams.zFactor;
+      // Camera breathing (life pack) — sub-pixel drift + a hair of fov, under the parallax.
+      camera.position.x += Math.sin(t * (Math.PI * 2 / 9.2)) * 0.02;
+      camera.position.y += Math.sin(t * (Math.PI * 2 / 12.7) + 1.7) * 0.015;
+      camera.fov = 55 + Math.sin(t * (Math.PI * 2 / 11.0)) * 0.15;
+      camera.updateProjectionMatrix();
     }
     camera.lookAt(0, 0, 0);
 
@@ -350,6 +479,32 @@ export function initScene(canvas) {
       if (_revealU && _revealU.uFlowmap) _revealU.uFlowmap.value = fm.uniform.value;
     }
 
+    // Cursor energy: integrate pointer speed, decay exponentially — the atmosphere's fog
+    // density and glow (plus the side light) all swell with recent cursor motion.
+    {
+      const dt = Math.max(1e-3, t - _prevEnergyT);
+      _prevEnergyT = t;
+      const speed = targetMouse.distanceTo(_prevPointer) / dt; // NDC units / sec
+      _prevPointer.copy(targetMouse);
+      _energy = Math.min(1, _energy + speed * _atmoParams.energyGain * dt);
+      _energy *= Math.exp(-dt / _atmoParams.energyTau);
+    }
+
+    // Fluid ink: splat at the pointer (screen-space 0-1) with its per-frame velocity, then
+    // advance the sim before anything samples the dye.
+    if (_fluid && !prefersReduced) {
+      const sx = mouse.x * 0.5 + 0.5;
+      const sy = mouse.y * 0.5 + 0.5;
+      if (_prevSplat.x >= 0) {
+        const dx = (sx - _prevSplat.x) * 12.0;
+        const dy = (sy - _prevSplat.y) * 12.0;
+        if (dx * dx + dy * dy > 1e-6) _fluid.splats.push({ x: sx, y: sy, dx, dy });
+      }
+      _prevSplat.set(sx, sy);
+      _fluid.update();
+      if (_fluidFx) _fluidFx.map = _fluid.uniform.value; // dye target swaps each frame
+    }
+
     _updateReveal();
     if (_revealU) _revealU.uTime.value = prefersReduced ? 0 : t;
     if (_env) _env.update(prefersReduced ? 0 : t);
@@ -357,7 +512,12 @@ export function initScene(canvas) {
     if (_sky) _sky.update(prefersReduced ? 0 : t);
     if (_floor) _floor.update(prefersReduced ? 0 : t);
     if (_mistFront) _mistFront.update(prefersReduced ? 0 : t);
-    if (_projector) _projector.update(mouse.x, mouse.y);
+    // One medium update feeds every atmospheric layer (backdrop, veil, floor fog, card tint).
+    if (_medium) _medium.update(prefersReduced ? 0 : t, prefersReduced ? 0 : _energy, mouse.x, mouse.y);
+    if (_atmo) _atmo.update(_camMouse.x * 0.03, _camMouse.y * 0.03);
+    if (_veil) _veil.update();
+    if (_sideLight) _sideLight.update(prefersReduced ? 0 : _energy, mouse.x, mouse.y);
+    if (_projector) _projector.update(mouse.x, mouse.y, _cardProx);
     if (_gui && _revealU) _gui.addCubeControls(_revealU); // idempotent — attaches once shader is live
 
     composer.render();
@@ -403,6 +563,7 @@ async function _buildVoxelCard() {
   _uvOffset = new Float32Array(N * 2);
   _vox      = new Float32Array(N * 3); // per-cube (depthNorm, rand, lum) for D2 motion/visibility
   _colRand  = new Float32Array(N);     // per-column random (shared across the 6 depth layers)
+  _runRand  = new Float32Array(N);     // per-run random (row-coherent dashes for the edge cull)
   _revealArr = new Float32Array(N);    // eased per-cube reveal (starts hidden)
   _bumpArr   = new Float32Array(N);    // eased per-cube bump height (starts flat)
 
@@ -442,6 +603,9 @@ async function _buildVoxelCard() {
     // per-column random: hash the grid cell only (no depth) → identical for all 6 layers,
     // so the cull removes/keeps a whole depth column together (no orphan cubes).
     _colRand[i] = _hash(gx, gz, 0);
+    // per-run random: ~3-cell horizontal runs share one value → the edge cull removes
+    // coherent dashes along rows (ref: fringe thins into row-aligned streaks, not confetti)
+    _runRand[i] = _hash(Math.floor(gx / 3), gz, 7);
 
     // Brightness-driven depth relief (small — preserves the Blender layout).
     const rz = wz + (px.lum - 0.5) * DEPTH_LUM + (h - 0.5) * DEPTH_NOISE;
@@ -454,10 +618,13 @@ async function _buildVoxelCard() {
     _vox[i * 3 + 2] = px.lum;
   }
 
-  const geo = new THREE.BoxGeometry(cube, cube, cube);
+  // Rounded cubes (reference: RoundedBoxGeometry radius 0.05/1.25 = 4% of the cell, 1 segment)
+  // — the rounded edges catch the side/ambient light as thin highlights.
+  const geo = new RoundedBoxGeometry(cube, cube, cube, 1, cube * 0.04);
   geo.setAttribute('aUvOffset', new THREE.InstancedBufferAttribute(_uvOffset, 2));
   geo.setAttribute('aVox', new THREE.InstancedBufferAttribute(_vox, 3));
   geo.setAttribute('aColRand', new THREE.InstancedBufferAttribute(_colRand, 1));
+  geo.setAttribute('aRunRand', new THREE.InstancedBufferAttribute(_runRand, 1));
   _revealAttr = new THREE.InstancedBufferAttribute(_revealArr, 1);
   _revealAttr.setUsage(THREE.DynamicDrawUsage);
   geo.setAttribute('aReveal', _revealAttr);
@@ -468,6 +635,7 @@ async function _buildVoxelCard() {
   voxelMesh = new THREE.InstancedMesh(geo, _makeCubeMaterial(), N);
   voxelMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   voxelMesh.frustumCulled = false;
+  voxelMesh.renderOrder = 10; // depthTest off → explicit paint order over floor/atmosphere
   _writeAllMatrices();
 
   cardGroup = new THREE.Group();
@@ -491,11 +659,15 @@ function _makeCubeMaterial() {
   // other (no vanishing). At rest the scattered cubes overlap into a soft haze; the
   // cursor lens collapses them back to the flat grid → crisp. NormalBlending = glassy
   // haze (swap to AdditiveBlending for a glowing core).
+  // Reference cube material (brainstron/reference_vals.md): mid-gray so the projected image
+  // reads bright on the cubes, fully rough, real IBL contribution, no depth testing (paint
+  // order handled by renderOrder — cubes never depth-fight each other or the backdrop).
   const m = new THREE.MeshStandardMaterial({
     map: _coverTex, side: THREE.FrontSide,
-    color: 0x0b0b0b,                                     // dark base so the projector is the key light
-    roughness: 0.55, metalness: 0.0, envMapIntensity: 0.22, // dim IBL → image keeps its contrast
-    transparent: true, depthWrite: false, blending: THREE.NormalBlending,
+    color: 0x808080,
+    roughness: 1.0, metalness: 0.0, envMapIntensity: 0.75,
+    transparent: true, depthWrite: false, depthTest: false, dithering: true,
+    blending: THREE.NormalBlending,
   });
   _patchCube(m);
   return m;
@@ -530,6 +702,16 @@ function _updateReveal() {
   _hover += (_hoverTarget - _hover) * 0.08;
   _revealU.uCursor.value.copy(_cursor);
   _revealU.uHover.value = _hover;
+
+  // Cursor proximity to the card rect (face ~4 × 2.48) with a soft margin — the projector
+  // swells from idle to full as the cursor approaches, so the cover reads only at the core.
+  {
+    const dx = Math.max(Math.abs(_cursor.x) - 2.0, 0);
+    const dy = Math.max(Math.abs(_cursor.y) - 1.24, 0);
+    const d = Math.hypot(dx, dy) / 1.5;               // 1.5-unit falloff margin
+    const t = 1 - Math.min(d, 1);
+    _cardProx = t * t * (3 - 2 * t) * _hover;         // smoothstep × window presence
+  }
 
   // Per-cube reveal easing: fast attack, slow release → cubes linger and fade out
   // smoothly when the cursor leaves instead of snapping back to hidden.
@@ -604,6 +786,9 @@ export function setProject(idx) {
   if (_sky) _sky.setColor(_accentFor(idx));
   if (_floor) _floor.setColor(_accentFor(idx));
   if (_mistFront) _mistFront.setColor(_accentFor(idx));
+  _medium?.transition(_atmoFor(idx));   // one tween — backdrop, veil, floor fog, card tint follow
+  _sideLight?.transition(_atmoFor(idx).glow);
+  _projector?.transition(_atmoFor(idx).glow);
   _updateProjectUI(idx);
 }
 
@@ -631,30 +816,38 @@ function _loadCoverTexture(path) {
 // per depth layer; zone-based visibility with mid/outer holes; and a soft hover pull.
 function _patchCube(material) {
   material.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, {
+    // The uniform table is built ONCE and reused across recompiles. The material
+    // recompiles whenever scene-level defines change (e.g. the projector spotlight's
+    // .map toggling null↔texture on project switch) — a fresh table each time would
+    // orphan the GUI bindings and reset every hand-tuned value.
+    _cubeU = _cubeU || {
       uTileScale: { value: _uvScale },
       uUvOrigin:   { value: _uvOrigin }, // (offU,offV) cover-fit origin for live-position UV
-      uDriftAmt:   { value: 0.0 },       // XY drift disabled (was 0.12)
+      uDriftAmt:   { value: 0.0 },       // XY drift OFF — ref keeps every cube on the grid lattice
       uDriftSpeed: { value: 0.4 },       // drift wander speed
       uCursor:    { value: _cursor },
       uHover:     { value: _hover },
       uRadius:    { value: REVEAL_RADIUS },
       uIdleFloor: { value: IDLE_FLOOR },
-      uSatFar:    { value: 0.15 },
-      uConFar:    { value: 0.70 },
-      uBrightFar: { value: 0.85 }, // softened: the spot now supplies the centre→edge falloff
-      uFog:       { value: new THREE.Color(0x0a0e1a) },
-      uFogAmt:    { value: 0.6 },
+      uSatFar:    { value: 0.45 },
+      uConFar:    { value: 0.8 },
+      uBrightFar: { value: 0.4 },  // idle cubes sit dark against the fog; reveal lifts to full
+      // Atmospheric tint adopts the medium's base color BY REFERENCE — the card breathes
+      // with the palette on every project switch, zero tween code.
+      uFog:       _medium ? _medium.u.uBase : { value: new THREE.Color(0x0a0e1a) },
+      uFogAmt:    { value: 0.0 },  // atmo tint off (hand-tuned 2026-07-03 — cover colors stay pure)
       // D2 — motion / zones / pull
       uTime:       { value: 0 },
       uHalfExtent: { value: _halfExtent },
       // alien.js-style Gaussian ring ripple (replaces old sine-wave ripple)
-      uRipplePeriod: { value: 3.0 },  // seconds per full ring expansion (two rings staggered)
-      uRippleAmp:    { value: 1.0 }, // Z peak displacement at ring crest
-      uDepthVisFar:   { value: 0.6 },                       // opacity of the deepest layer (near = 1.0, mid ≈ 0.75)
-      uKeepFrac:      { value: 0.6 },                        // keep fraction at the far edges (centre stays 100%)
-      uDenseRadius:   { value: 5.0 },                       // cubes within this radius stay fully dense
-      uFadeRadius:    { value: 22.0 },                       // by this radius, keep eases to uKeepFrac (corner ≈ 23)
+      uRipplePeriod: { value: 8.7 },  // seconds per full ring expansion (two rings staggered)
+      uRippleAmp:    { value: 0.74 }, // Z peak displacement at ring crest
+      uDepthVisFar:   { value: 0.8 },                       // opacity of the deepest layer (near = 1.0)
+      uKeepFrac:      { value: 0.83 },                      // keep fraction at the far edges (centre stays 100%)
+      uDenseRadius:   { value: 0.1 },                       // NORMALIZED elliptical radius — dense core ends here
+      uFadeRadius:    { value: 0.8 },                       // fully eroded by the face boundary (corner ≈ 1.41)
+      uCullScale:     { value: 0.25 },                      // cull field frequency (smaller = bigger bites)
+      uCullDrift:     { value: 0.036 },                     // gentle field drift — bites migrate slowly (hand-tuned 2026-07-03)
       uPullXY:     { value: 0.18 },
       uPullZ:      { value: 0.10 },
       uOuterFade:  { value: 0.55 },
@@ -662,13 +855,13 @@ function _patchCube(material) {
       uHoleThresh: { value: 0.12 },
       uHoleDepth:  { value: 0.70 },
       // D3 — depth cloud + scale-based visibility (compact, dense middle core)
-      uDepthScatter: { value: 0.08 }, // per-cube Z spread → 3D cloud (compressed)
-      uDepthFunnel:  { value: 0.06 }, // push the centre back into a tunnel
+      uDepthScatter: { value: 1.0 },  // per-column Z spread at the edges → volumetric fringe (centre stays flat via _move)
+      uDepthFunnel:  { value: 0.0 },  // centre tunnel off (ref: dense readable core)
       uHideScale:    { value: 0.0 },  // hidden cubes shrink to this (crisp cull)
       // idle opacity classes (keyed off per-cube hash aVox.y, uniform in [0,1])
-      uTranspFrac:  { value: 0.18 },  uTranspAlpha: { value: 0.35 }, // "transparent" cubes
-      uTransFrac:   { value: 0.28 },  uTransAlpha:  { value: 0.55 }, // translucent (a bit higher)
-      uFrostFrac:   { value: 0.16 },  uFrostAlpha:  { value: 0.60 }, // frosted (rough + milky)
+      uTranspFrac:  { value: 0.06 },  uTranspAlpha: { value: 0.35 }, // "transparent" cubes
+      uTransFrac:   { value: 0.10 },  uTransAlpha:  { value: 0.55 }, // translucent (a bit higher)
+      uFrostFrac:   { value: 0.05 },  uFrostAlpha:  { value: 0.60 }, // frosted (rough + milky)
       uFrostRough:  { value: 0.5 },   // extra roughness added to frosted cubes
       // cursor bump — height scale; the bell + easing is computed CPU-side into aBump
       uBumpAmp:    { value: BUMP_AMP },
@@ -680,21 +873,23 @@ function _patchCube(material) {
       // flowmap — cursor velocity → image UV distortion (image "pours" on drag)
       uFlowmap:     _flowmap ? _flowmap.uniform : { value: null },
       uFlowStrength: { value: 0.07 }, // UV slide magnitude (subtle but readable)
-      uMouseFactor:    { value: 1.54 }, // flow speed → per-cube Z displacement
-      uMouseLightness: { value: 0.0 },  // flow speed → per-cube brightness lift
+      uMouseFactor:    { value: 4.0 },  // flow speed → per-cube Z displacement
+      uMouseLightness: { value: 4.0 },  // flow speed → brightness lift (ref tMouseSim hover-brighten)
       // static per-cube Perlin grain — spatially-coherent surface variation (brightness + roughness)
       uGrainScale: { value: 1.6 },   // noise frequency across the card face
       uGrainAmt:   { value: 0.16 },  // brightness variation (± fraction)
       uGrainRough: { value: 0.30 },  // roughness variation (± absolute)
-    });
-    _revealU = shader.uniforms;
+    };
+    Object.assign(shader.uniforms, _cubeU);
+    _revealU = _cubeU;
 
     shader.vertexShader = shader.vertexShader
       .replace('void main() {', /* glsl */`
-        attribute vec2 aUvOffset; attribute vec3 aVox; attribute float aReveal; attribute float aColRand; attribute float aBump;
+        attribute vec2 aUvOffset; attribute vec3 aVox; attribute float aReveal; attribute float aColRand; attribute float aRunRand; attribute float aBump;
         uniform vec2 uTileScale; uniform vec2 uCursor; uniform vec2 uHalfExtent; uniform vec2 uUvOrigin;
         uniform float uHover; uniform float uRadius; uniform float uIdleFloor; uniform float uDriftAmt; uniform float uDriftSpeed;
         uniform float uTime; uniform float uRipplePeriod; uniform float uRippleAmp; uniform float uDepthVisFar; uniform float uKeepFrac; uniform float uDenseRadius; uniform float uFadeRadius;
+        uniform float uCullScale; uniform float uCullDrift;
         uniform float uPullXY; uniform float uPullZ;
         uniform float uOuterFade; uniform float uEdgeLayer; uniform float uHoleThresh; uniform float uHoleDepth;
         uniform float uDepthScatter; uniform float uDepthFunnel; uniform float uHideScale;
@@ -724,6 +919,7 @@ function _patchCube(material) {
         float _r   = clamp(length(_ctr.xy / uHalfExtent), 0.0, 1.0); // 0 centre → ~1 edge
         float _lay = aVox.x;
         float _cr2 = fract(aColRand * 263.17 + 0.137);              // per-column 2nd random (decorrelated)
+        float _cubeRand = fract(aVox.y * 157.31 + aVox.x * 3.7);    // per-cube random (breaks column coherence at edges)
         // cursor pool (D1 reveal)
         float _d    = distance(_ctr.xy, uCursor);
         float _pool = smoothstep(uRadius, 0.0, _d) * uHover;
@@ -733,31 +929,51 @@ function _patchCube(material) {
         float _distCells = length(_ctr.xy) / _cell;
         // every cube carries the image at its depth-faded opacity (all 6 layers)
         float _depthVis = mix(uDepthVisFar, 1.0, _lay); // near 1.0 · mid ~0.75 · far uDepthVisFar
-        // radial keep gradient: 100% dense in the centre, easing to uKeepFrac toward the
-        // edges (no hard ring). Per-column random → whole columns kept/removed together.
-        float _keepProb = mix(1.0, uKeepFrac, smoothstep(uDenseRadius, uFadeRadius, _distCells));
-        float _cand   = step(_keepProb, aColRand);
+        // erosion band: normalized ELLIPTICAL radius (aspect-aware — top/bottom erode the
+        // same as left/right; cell distance kept the 40-wide × 24-tall face solid vertically),
+        // jittered per-run by a decorrelated hash → ragged organic bites + floating outlier
+        // dashes instead of a smooth ring (ref silhouette has no straight edge anywhere)
+        // ── Noise-field cull ── ONE low-frequency field over the face (fbm) instead of
+        // independent per-run randoms: holes cluster into organic bites and survivors
+        // form connected islands (ref), not confetti. _ctr.xy is identical for a cell's
+        // 6 depth layers, so depth columns stay whole for free. uCullDrift > 0 migrates
+        // the pattern over time (cubes fade in/out); ships at 0 = frozen.
+        vec2  _cellUv = _ctr.xy / _cell;                       // grid-cell coordinates
+        float _field  = _gf(_cellUv * uCullScale + uTime * uCullDrift * vec2(1.0, -0.65) + 3.7);
+        float _erode  = smoothstep(uDenseRadius, uFadeRadius, _r);
+        // cull threshold sinks with erosion: centre keeps everything, fringe keeps only
+        // where the field runs low. Wide band → the drifting field FADES cubes in/out
+        // (ref video: gaps migrate continuously, nothing pops).
+        float _th   = mix(0.95, uKeepFrac * 0.5 + 0.12, _erode);
+        float _cand = smoothstep(_th, _th + 0.1, _field);
         float _hidden = _cand * (1.0 - aReveal);
-        // idle material classes by per-cube hash: transparent · translucent · frosted · normal
+        // idle material classes by per-cube hash: transparent · translucent · frosted · normal.
+        // Class fractions swell toward the edges (ref: centre almost all opaque, fringe is
+        // mostly translucent ghosts / frosted milk) — same radial band as the cull.
+        float _clsGain = mix(0.35, 3.2, _erode);
         float _opCls = 1.0; vFrost = 0.0;
-        float _t1 = uTranspFrac, _t2 = _t1 + uTransFrac, _t3 = _t2 + uFrostFrac;
+        float _t1 = uTranspFrac * _clsGain, _t2 = _t1 + uTransFrac * _clsGain, _t3 = _t2 + uFrostFrac * _clsGain;
         if      (aVox.y < _t1) _opCls = uTranspAlpha;
         else if (aVox.y < _t2) _opCls = uTransAlpha;
         else if (aVox.y < _t3) { _opCls = uFrostAlpha; vFrost = 1.0; }
         // under the cursor pool, restore class cubes to normal (opaque, un-frosted)
         _opCls  = mix(_opCls, 1.0, _pool);
         vFrost *= (1.0 - _pool);
+        // survivors near the cull threshold turn ghostly → soft translucent halos
+        // around each bite instead of hard hole edges (restored under the cursor pool)
+        _opCls *= mix(1.0, 0.5, smoothstep(_th - 0.16, _th, _field) * (1.0 - _pool));
         vAlpha = _depthVis * (1.0 - _hidden) * _opCls;
         // motion fades in by radius: still/flat dense centre, animated cloud toward edges.
         // (drift + scatter + ripple all multiply by _move, so this gates them together.)
-        float _move = (1.0 - aReveal) * smoothstep(uDenseRadius, uFadeRadius, _distCells);
+        float _move = (1.0 - aReveal) * _erode;
         // gentle XY drift — whole column drifts together (per-column random) so it stays a
         // coherent stack instead of splitting into orphan cubes. Zero under the hover lens.
         vec2 _drift = vec2(sin(uTime * uDriftSpeed + aColRand * 6.2831),
                            cos(uTime * uDriftSpeed * 0.9 + _cr2 * 6.2831)) * uDriftAmt * _move;
         transformed.xy += _drift;
-        // static Z scatter → whole column shifts together (keeps its 6-layer depth spacing)
-        float _scatterZ = (_cr2 - 0.5) * 2.0 * uDepthScatter - (1.0 - _r) * uDepthFunnel;
+        // static Z scatter — follows the cull field (with light per-cube variation) so
+        // surviving clusters recede together as blobs (ref). Cubes NEVER leave the XY lattice.
+        float _scatterZ = mix(_field - 0.45, _cubeRand - 0.5, 0.25) * 2.0 * uDepthScatter - (1.0 - _r) * uDepthFunnel;
         transformed.z += _scatterZ * _move;
         // alien.js-style Gaussian ring ripple — two staggered expanding rings, each fading as they grow
         float _distW = length(_ctr.xy);                             // world-unit distance from center
@@ -976,11 +1192,28 @@ export function destroy() {
   _floor = null;
   _flowmap?.destroy();
   _flowmap = null;
+  _fluid?.destroy();
+  _fluid = null;
+  _godRaySrc?.geometry.dispose();
+  _godRaySrc?.material.dispose();
+  _godRaySrc = null;
+  _godRays = null;
+  _tiltShift = null;
+  _fluidFx = null;
   _wobble = null;
   _mistFront?.destroy();
   _mistFront = null;
   _projector?.destroy();
   _projector = null;
+  _atmo?.destroy();
+  _atmo = null;
+  _veil?.destroy();
+  _veil = null;
+  _medium?.destroy();
+  _medium = null;
+  _sideLight?.destroy();
+  _sideLight = null;
+  if (_ambient) { gsap.killTweensOf(_ambient.color); scene?.remove(_ambient); _ambient.dispose(); _ambient = null; }
   window.removeEventListener('resize',    _handlers.resize);
   window.removeEventListener('mousemove', _handlers.mousemove);
   window.removeEventListener('keydown',   _handlers.keydown);
@@ -998,5 +1231,5 @@ export function destroy() {
   composer?.dispose();
   renderer?.dispose();
   _curPos = _scaleArr = _uvOffset = _vox = _colRand = _revealArr = _revealAttr = _bumpArr = _bumpAttr = null;
-  renderer = composer = scene = camera = cardGroup = voxelMesh = _coverTex = _revealU = null;
+  renderer = composer = scene = camera = cardGroup = voxelMesh = _coverTex = _revealU = _cubeU = null;
 }

@@ -1,6 +1,5 @@
 {
-  "_comment": "Snapshot of hardcoded scene defaults — not loaded at runtime. Values mirror src/scripts/* as of 2026-07-01. Tune in code or use dev GUI (?lights); this file is the canonical reference for handoff and future migration.",
-
+  "_comment": "Snapshot of hardcoded scene defaults — not loaded at runtime. Values mirror src/scripts/* as of 2026-07-03 (hand-tuned via GUI 'Copy settings'). Tune in code or use dev GUI (?lights).",
   "meta": {
     "version": 1,
     "description": "Read-only inventory of Three.js homepage scene configuration",
@@ -8,14 +7,18 @@
     "modules": {
       "environment": false,
       "cloudLayer": false,
-      "skyDome": true,
+      "skyDome": false,
       "reflectiveFloor": true,
-      "mistFront": true,
+      "mistFront": false,
       "projector": true,
-      "sceneGui": "dev or ?lights URL flag only"
-    }
+      "atmosphere": true,
+      "sideLight": true,
+      "sceneGui": "dev or ?lights URL flag only",
+      "atmosphereMedium": true,
+      "fogVeil": true
+    },
+    "retirementFlags": "USE_SKY_DOME / ENABLE_GODRAYS / USE_MIST_FRONT in three-scene.js — atmosphere.js replaced dome (backdrop), god rays (light glow), and mist-front (haze)"
   },
-
   "renderer": {
     "antialias": true,
     "preserveDrawingBuffer": true,
@@ -26,29 +29,35 @@
     },
     "mobileBreakpoint": 768,
     "toneMapping": "ACESFilmicToneMapping",
-    "toneMappingExposure": 1.05,
+    "toneMappingExposure": 0,
     "outputColorSpace": "SRGBColorSpace"
   },
-
   "scene": {
     "background": "#04040c",
     "backgroundBlurriness": 0.35,
     "backgroundIntensity": 0.5,
-    "environmentIntensity": 0.05,
-    "backgroundRotation": { "x": 0, "y": 0, "z": 0 },
-    "environmentRotation": { "x": 0, "y": 0, "z": 0 },
+    "environmentIntensity": 0,
+    "backgroundRotation": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "environmentRotation": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
     "environmentMap": {
       "exrPath": "/assets/sky_env.exr",
       "mapping": "EquirectangularReflectionMapping",
       "pmremSceneNear": 0.04
     }
   },
-
   "sky": {
     "geometry": {
-      "radius": 90,
-      "widthSegments": 64,
-      "heightSegments": 32
+      "type": "IcosahedronGeometry",
+      "radius": 300,
+      "detail": 8
     },
     "renderOrder": -1000,
     "side": "BackSide",
@@ -65,29 +74,75 @@
       "baseGradientPow": 0.85,
       "uvProjectionDenominator": 0.55,
       "mistBanks": [
-        { "scale": 1.0, "drift": [0.006, 0.0], "azimuthCenter": -1.9, "azimuthWidth": 0.85, "weight": 1.0 },
-        { "scale": 1.4, "drift": [-0.004, 0.003], "azimuthCenter": 0.5, "azimuthWidth": 0.7, "weight": 0.85 },
-        { "scale": 0.8, "drift": [0.003, -0.002], "azimuthCenter": 2.5, "azimuthWidth": 1.0, "weight": 0.7 }
+        {
+          "scale": 1.0,
+          "drift": [
+            0.006,
+            0.0
+          ],
+          "azimuthCenter": -1.9,
+          "azimuthWidth": 0.85,
+          "weight": 1.0
+        },
+        {
+          "scale": 1.4,
+          "drift": [
+            -0.004,
+            0.003
+          ],
+          "azimuthCenter": 0.5,
+          "azimuthWidth": 0.7,
+          "weight": 0.85
+        },
+        {
+          "scale": 0.8,
+          "drift": [
+            0.003,
+            -0.002
+          ],
+          "azimuthCenter": 2.5,
+          "azimuthWidth": 1.0,
+          "weight": 0.7
+        }
       ],
-      "mistSmoothstep": [0.34, 0.85],
-      "lowMaskSmoothstep": [0.8, 0.12],
+      "mistSmoothstep": [
+        0.34,
+        0.85
+      ],
+      "lowMaskSmoothstep": [
+        0.8,
+        0.12
+      ],
       "densityMix": 0.55,
       "lightShaftFbmScale": 1.8,
       "lightShaftTimeScale": 0.02,
-      "lightShaftSmoothstep": [0.55, 0.95],
-      "lightShaftHeightMask": [0.65, 0.1],
+      "lightShaftSmoothstep": [
+        0.55,
+        0.95
+      ],
+      "lightShaftHeightMask": [
+        0.65,
+        0.1
+      ],
       "lightShaftStrength": 0.1,
       "accentMix": 0.12,
       "fbmOctaves": 6
     }
   },
-
   "camera": {
     "fov": 55,
     "near": 0.1,
     "far": 2000,
-    "restPosition": [0, 0, 5.5],
-    "lookAt": [0, 0, 0],
+    "restPosition": [
+      0,
+      0,
+      5.5
+    ],
+    "lookAt": [
+      0,
+      0,
+      0
+    ],
     "parallax": {
       "travelX": 1.0,
       "travelY": 0.5,
@@ -96,45 +151,218 @@
     },
     "mouseSmoothing": 0.05,
     "gui": {
-      "travelXRange": [0, 2],
-      "travelYRange": [0, 1],
-      "zFactorRange": [0, 3],
-      "lerpRange": [0.005, 0.15]
+      "travelXRange": [
+        0,
+        2
+      ],
+      "travelYRange": [
+        0,
+        1
+      ],
+      "zFactorRange": [
+        0,
+        3
+      ],
+      "lerpRange": [
+        0.005,
+        0.15
+      ]
     }
   },
-
   "post": {
     "bloom": {
-      "intensity": 0.5,
-      "luminanceThreshold": 0.72,
+      "intensity": 1.45,
+      "luminanceThreshold": 0.23,
       "luminanceSmoothing": 0.7,
       "mipmapBlur": true,
       "radius": 0.6,
       "gui": {
-        "intensityRange": [0, 3],
-        "thresholdRange": [0, 1]
+        "intensityRange": [
+          0,
+          3
+        ],
+        "thresholdRange": [
+          0,
+          1
+        ]
       }
     },
     "vignette": {
-      "darkness": 0.55,
-      "offset": 0.35
+      "darkness": 0.67,
+      "offset": 0
     },
     "chromaticAberration": {
-      "offset": [0.0012, 0.0012],
+      "offset": [
+        0.0012,
+        0.0012
+      ],
       "radialModulation": true,
       "modulationOffset": 0.15
     },
     "depthOfField": {
-      "enabledWhenNotMobile": true,
-      "worldFocusDistance": 6.4,
-      "worldFocusRange": 1.8,
-      "bokehScale": 2.0
+      "note": "REMOVED (cinematic overhaul 2026-07-02) — it gaussian-blurred the hero card; the reference keeps the card sharpest in frame."
+    },
+    "godRays": {
+      "note": "DISABLED (ENABLE_GODRAYS=false) — the atmosphere's side glow replaced it. pmndrs GodRaysEffect; radiates from an emissive source sphere.",
+      "source": {
+        "radius": 1.4,
+        "color": "#bcd0ff",
+        "position": [
+          0,
+          3.2,
+          -9
+        ]
+      },
+      "density": 0.92,
+      "decay": 0.92,
+      "weight": 0.5,
+      "exposure": 0.5,
+      "samples": 60,
+      "clampMax": 1.0
+    },
+    "afterimage": {
+      "note": "custom feedback Pass (afterimage-pass.js) between RenderPass and bloom — max(cur, prev×damp) ping-pong; trails glow. Disabled under reduced motion. GUI: trails enabled / trail length.",
+      "damp": 0.8,
+      "enabled": true
+    },
+    "fluidDistortion": {
+      "note": "custom pmndrs Effect (fluid-distortion-effect.js); full-screen ripple from the fluid dye. GUI: enabled checkbox.",
+      "strength": 0.005
+    },
+    "tiltShift": {
+      "note": "pmndrs TiltShiftEffect — ships DISABLED (blend SKIP; GUI toggle restores). Tuned 2026-07-03.",
+      "offset": 0.0,
+      "focusArea": 0.6,
+      "feather": 0.25
     },
     "exposure": {
-      "guiRange": [0, 3]
+      "guiRange": [
+        0,
+        3
+      ]
+    },
+    "noise": {
+      "note": "Film grain — pmndrs NoiseEffect, ships DISABLED (blend SKIP; _originalBlend restores OVERLAY via GUI).",
+      "blendFunction": "OVERLAY",
+      "premultiply": false,
+      "opacity": 0.161,
+      "enabled": false
     }
   },
-
+  "fluidInk": {
+    "note": "alien.js Fluid — cursor-splatted ink dye shared by the atmosphere fog, floor warp, and the screen distortion (dome consumers dormant while USE_SKY_DOME=false). Reduced-motion freezes it.",
+    "sim": {
+      "simRes": 128,
+      "dyeRes": 512,
+      "densityDissipation": 0.9,
+      "velocityDissipation": 0.9,
+      "pressureDissipation": 0.8,
+      "curlStrength": 50,
+      "radius": 0.6
+    },
+    "splatVelocityScale": 12.0,
+    "consumers": {
+      "atmosphereFog": {
+        "uniform": "uInkFog",
+        "value": 0.09
+      },
+      "domeMist": {
+        "uniform": "uInkMist",
+        "value": 0.5
+      },
+      "domeDisplace": {
+        "uniform": "uInkDisplace",
+        "value": 6.0
+      },
+      "floorWarp": {
+        "uniform": "uInkWarp",
+        "value": 0.0
+      }
+    }
+  },
+  "atmosphere": {
+    "note": "Screen-space backdrop (atmosphere.js) — absorption/scattering cloudscape. Three wind-advected noise layers (depth parallax x1/x0.6/x1.6); transmittance = exp(-density*uAbsorb); backdrop energized only by the light kernel; in-scatter = fog color * light * (1-transmittance); hot core where dense fog meets the light. Darkness away from the light falls out of the math. Colors/kernel/wind/clocks adopted from atmosphereMedium by reference.",
+    "mobileDefine": "MOBILE — fbm3 everywhere, layer 3 skipped (isMobile = width < 768)",
+    "cursorEnergy": {
+      "note": "Scalar integrated in _tick: energy += pointerSpeed * gain * dt, then *= exp(-dt/tau). Drives L3 detail, glow intensity, and the side light swell.",
+      "energyGain": 0.08,
+      "energyTau": 1.4
+    },
+    "uniforms": {
+      "uL1Alpha": 1.0,
+      "uL1Speed": 0.011,
+      "uL1Scale": 1.8,
+      "uL2Alpha": 0.18,
+      "uL2Scale": 1.45,
+      "uL3Alpha": 0.35,
+      "uL3Speed": 0.05,
+      "uL3Scale": 9.0,
+      "uL1Mix2": 1.0,
+      "uWarp": 2.2,
+      "uDensityGamma": 0.9,
+      "uCoreGain": 1.75,
+      "uAmbient": "#a79d99 (fixed warm-neutral)",
+      "uAmbientAmt": 0.42,
+      "uEnergyGain": 0.7,
+      "uInkFog": 0.09,
+      "uGlowIntensity": 0.98,
+      "uGlowEnergyGain": 0.0,
+      "uGlowPos": [
+        1.08,
+        0.01
+      ],
+      "uGlowRadius": 0.96,
+      "uGlowStretch": 0.3,
+      "uGlowMouseShift": 0.03,
+      "uAbsorb": 5.55,
+      "uScatterGain": 0.24,
+      "uHaloGain": 0.4,
+      "uBackdropFloor": 0.12
+    },
+    "parallaxFactor": 0.03,
+    "transitionDuration": 1.2,
+    "defaultPalette": {
+      "base": "#111111",
+      "fog": "#e3e3e3",
+      "glow": "#dbdbdb",
+      "smoke": "#b25325"
+    },
+    "shaderConstants": {
+      "carveSmoothsteps": [
+        [
+          0.25,
+          0.95
+        ],
+        [
+          0.2,
+          0.95
+        ]
+      ],
+      "evolveTimeScale": 0.006,
+      "windLayerFactors": [
+        1.0,
+        0.6,
+        1.6
+      ]
+    }
+  },
+  "ambientLight": {
+    "note": "AmbientLight kept in the scene at intensity 0 (tuned 2026-07-02: white fog + projector carry the look); re-enable via GUI.",
+    "color": "#ffffff",
+    "intensity": 0
+  },
+  "sideLight": {
+    "note": "Real PointLight (side-light.js) matching the atmosphere's glow — rims the voxel card so it agrees with the bright right edge. Color gsap-tweens to each project's atmo.glow.",
+    "restPosition": [
+      12,
+      0.8,
+      2.5
+    ],
+    "baseIntensity": 0,
+    "decay": 2,
+    "energyBoost": 0.6,
+    "cursorTravel": 0.4
+  },
   "fog": {
     "type": "FogExp2",
     "initialPresetIndex": 0,
@@ -146,9 +374,13 @@
         "ambientInt": 0.5,
         "spot": "#dfe6ff",
         "spotInt": 30,
-        "spotPos": [2, 4, 4],
-        "fog": "#03030a",
-        "fogDensity": 0.014
+        "spotPos": [
+          2,
+          4,
+          4
+        ],
+        "fog": "#04040c",
+        "fogDensity": 0.007
       },
       {
         "label": "Particles — electric blue",
@@ -156,9 +388,13 @@
         "ambientInt": 0.4,
         "spot": "#aabbff",
         "spotInt": 46,
-        "spotPos": [-2, 4, 4],
-        "fog": "#020207",
-        "fogDensity": 0.02
+        "spotPos": [
+          -2,
+          4,
+          4
+        ],
+        "fog": "#030310",
+        "fogDensity": 0.01
       },
       {
         "label": "Brand — warm emerald",
@@ -166,9 +402,13 @@
         "ambientInt": 0.4,
         "spot": "#55ddaa",
         "spotInt": 44,
-        "spotPos": [1, 5, 4],
-        "fog": "#020605",
-        "fogDensity": 0.016
+        "spotPos": [
+          1,
+          5,
+          4
+        ],
+        "fog": "#020806",
+        "fogDensity": 0.008
       },
       {
         "label": "Analytics — deep navy",
@@ -176,9 +416,13 @@
         "ambientInt": 0.4,
         "spot": "#5577cc",
         "spotInt": 48,
-        "spotPos": [3, 4, 4],
-        "fog": "#010205",
-        "fogDensity": 0.022
+        "spotPos": [
+          3,
+          4,
+          4
+        ],
+        "fog": "#020409",
+        "fogDensity": 0.011
       },
       {
         "label": "Experiments — warm amber",
@@ -186,14 +430,17 @@
         "ambientInt": 0.4,
         "spot": "#ffaa44",
         "spotInt": 48,
-        "spotPos": [2, 3, 5],
-        "fog": "#060300",
-        "fogDensity": 0.016
+        "spotPos": [
+          2,
+          3,
+          5
+        ],
+        "fog": "#0a0501",
+        "fogDensity": 0.008
       }
     ],
-    "note": "Scene lights removed; presets currently drive fog color/density only on project switch"
+    "note": "Presets drive fog color/density only on project switch; fog colors match each project's atmo.base so scene fog never fights the backdrop. Lights: projector spotlight + side light."
   },
-
   "voxel": {
     "gridCols": 40,
     "gridRows": 24,
@@ -203,19 +450,24 @@
     "depthNoise": 0.03,
     "dataSource": "/assets/cube_positions.json",
     "frustumCulled": false,
+    "geometry": "RoundedBoxGeometry(cell, cell, cell, 1, cell * 0.04) — reference ratio 0.05/1.25; rounded edges catch the side/ambient light",
+    "renderOrder": 10,
     "material": {
-      "color": "#0b0b0b",
-      "roughness": 0.55,
+      "note": "Reference values: mid-gray so the projected image reads bright; depthTest off (paint order via renderOrder)",
+      "color": "#808080",
+      "roughness": 1.0,
       "metalness": 0.0,
-      "envMapIntensity": 0.22,
+      "envMapIntensity": 0.75,
       "transparent": true,
       "depthWrite": false,
+      "depthTest": false,
+      "dithering": true,
       "blending": "NormalBlending",
       "side": "FrontSide"
     },
     "cursorReveal": {
       "revealRadius": 2.2,
-      "idleFloor": 1.0,
+      "idleFloor": 0.32,
       "hoverLerp": 0.08,
       "cursorLerp": 0.18,
       "revealAttack": 0.22,
@@ -229,39 +481,50 @@
     },
     "colorSampler": {
       "canvasWidth": 160,
-      "neutralColor": { "r": 0.1, "g": 0.12, "b": 0.18, "lum": 0.12 },
-      "neutralDominant": { "r": 0.5, "g": 0.55, "b": 0.62 }
+      "neutralColor": {
+        "r": 0.1,
+        "g": 0.12,
+        "b": 0.18,
+        "lum": 0.12
+      },
+      "neutralDominant": {
+        "r": 0.5,
+        "g": 0.55,
+        "b": 0.62
+      }
     },
     "shaderUniforms": {
       "uDriftAmt": 0.0,
       "uDriftSpeed": 0.4,
       "uRadius": 2.2,
       "uIdleFloor": 1.0,
-      "uSatFar": 0.15,
-      "uConFar": 0.7,
-      "uBrightFar": 0.85,
-      "uFog": "#0a0e1a",
-      "uFogAmt": 0.6,
-      "uRipplePeriod": 3.0,
-      "uRippleAmp": 1.0,
-      "uDepthVisFar": 0.6,
-      "uKeepFrac": 0.6,
-      "uDenseRadius": 5.0,
-      "uFadeRadius": 22.0,
+      "uSatFar": 0.45,
+      "uConFar": 0.8,
+      "uBrightFar": 0.4,
+      "uFog": "shares the medium's uBase color object by reference (was fixed #0a0e1a)",
+      "uFogAmt": 0.0,
+      "uRipplePeriod": 8.7,
+      "uRippleAmp": 0.74,
+      "uDepthVisFar": 0.8,
+      "uKeepFrac": 0.83,
+      "uDenseRadius": 0.1,
+      "uFadeRadius": 0.8,
+      "uCullScale": 0.25,
+      "uCullDrift": 0.036,
       "uPullXY": 0.18,
       "uPullZ": 0.1,
       "uOuterFade": 0.55,
       "uEdgeLayer": 0.25,
       "uHoleThresh": 0.12,
       "uHoleDepth": 0.7,
-      "uDepthScatter": 0.08,
-      "uDepthFunnel": 0.06,
+      "uDepthScatter": 1.0,
+      "uDepthFunnel": 0.0,
       "uHideScale": 0.0,
-      "uTranspFrac": 0.18,
+      "uTranspFrac": 0.06,
       "uTranspAlpha": 0.35,
-      "uTransFrac": 0.28,
+      "uTransFrac": 0.1,
       "uTransAlpha": 0.55,
-      "uFrostFrac": 0.16,
+      "uFrostFrac": 0.05,
       "uFrostAlpha": 0.6,
       "uFrostRough": 0.5,
       "uBumpAmp": 0.9,
@@ -270,8 +533,8 @@
       "uWaveAmp": 0.1,
       "uWaveSpeed": 2.8,
       "uFlowStrength": 0.07,
-      "uMouseFactor": 1.54,
-      "uMouseLightness": 0.0,
+      "uMouseFactor": 4.0,
+      "uMouseLightness": 4.0,
       "uGrainScale": 1.6,
       "uGrainAmt": 0.16,
       "uGrainRough": 0.3
@@ -280,6 +543,14 @@
       "runtimeTunable": false,
       "colRandHashMultiplier": 263.17,
       "colRandHashOffset": 0.137,
+      "cubeRandHash": "fract(aVox.y * 157.31 + aVox.x * 3.7) — per-cube random",
+      "cullField": "_field = fbm(_cellUv * uCullScale + uTime * uCullDrift * (1,-0.65)) — ONE low-freq noise field over the face; holes cluster into organic bites, survivors form islands (ref). uCullDrift 0.036 = gentle migration (hand-tuned 2026-07-03; 0 freezes)",
+      "erodeBand": "_erode = smoothstep(uDenseRadius, uFadeRadius, _r) — NORMALIZED elliptical radius (uDenseRadius/uFadeRadius are 0-1 fractions of the half-extent, not cells); shared by cull threshold, opacity classes, and _move",
+      "cullThreshold": "_th = mix(0.95, uKeepFrac*0.5 + 0.12, _erode); hidden = smoothstep(_th, _th+0.1, _field)",
+      "nearHoleGhosting": "survivors with field within 0.16 below _th get alpha ×0.5 → soft translucent halos around bites (restored under cursor pool)",
+      "scatterZMix": "mix(_field-0.45, cubeRand-0.5, 0.25) — clusters recede together as blobs",
+      "aRunRandStatus": "attribute still uploaded but DORMANT since the noise-field cull replaced the run cull (2026-07-03)",
+      "opacityClassEdgeGain": "class fractions × mix(0.35, 3.2, smoothstep(uDenseRadius, uFadeRadius, distCells))",
       "rippleGaussianSharpness": 16.0,
       "rippleMaxRadiusFactor": 1.15,
       "rippleStaggerPhase": 0.5,
@@ -291,60 +562,92 @@
       "iridescenceMix": 0.45,
       "frostDesaturateMix": 0.6,
       "frostLift": 0.12,
-      "roughnessClamp": [0.04, 1.0]
+      "roughnessClamp": [
+        0.04,
+        1.0
+      ]
     },
     "gui": {
-      "uRippleAmpRange": [0, 1],
-      "uRipplePeriodRange": [0.5, 10],
-      "uMouseFactorRange": [0, 4],
-      "uMouseLightnessRange": [0, 4]
+      "uRippleAmpRange": [
+        0,
+        1
+      ],
+      "uRipplePeriodRange": [
+        0.5,
+        10
+      ],
+      "uMouseFactorRange": [
+        0,
+        4
+      ],
+      "uMouseLightnessRange": [
+        0,
+        4
+      ]
     }
   },
-
   "flowmap": {
     "size": 128,
     "falloff": 0.2,
     "alpha": 1,
     "dissipation": 0.97
   },
-
   "wobble": {
-    "frequency": [0.28, 0.2, 0.14],
-    "amplitude": [0.06, 0.09, 0.025],
+    "frequency": [
+      0.28,
+      0.2,
+      0.14
+    ],
+    "amplitude": [
+      0.06,
+      0.09,
+      0.025
+    ],
     "lerpSpeed": 0.018
   },
-
   "cardMotion": {
     "tiltY": 0.14,
     "tiltX": 0.07,
-    "groupPosition": [0, 0, 0]
+    "groupPosition": [
+      0,
+      0,
+      0
+    ]
   },
-
   "reflectiveFloor": {
+    "note": "Reference dark-mirror formula (brainstron/reference_vals.md): dark-gray base × reflection × mixStrength, ONE static soft normal map distorting the reflection (no time scroll). All floor motion comes from the reflected atmosphere. setColor() is a no-op — per-project hue arrives via the reflection. Moody pass: distance fog inside the shader converges the far ground to the medium's base color (horizon dissolves); fog density churns with a 1-octave field sample; ink lookup drifts with the shared wind.",
     "enabled": true,
     "radius": 30,
     "segments": 128,
     "visible": true,
     "reflector": {
-      "color": "#111111",
+      "color": "#3a3a3a",
       "textureWidth": 1024,
       "textureHeight": 1024,
       "clipBias": 0.003
     },
     "uniforms": {
-      "uReflectivity": 1.0,
-      "uRadius": 30,
-      "uDistort": 0.025,
-      "uContrast": 1.09,
-      "uFlow": 0.31,
-      "uTint": 0.82,
-      "uNormalRepeat": 0.1
+      "uReflectivity": 0.0,
+      "uMirror": 1.0,
+      "uFloorMixStrength": 6.8,
+      "uDist": 1.5,
+      "uNormalScale": [
+        1.6,
+        1.6
+      ],
+      "uRadius": 23,
+      "uInkWarp": 0.0,
+      "uFogNear": 4.0,
+      "uFogFar": 18.0
     },
     "transform": {
-      "position": [0, -1.65, 0],
+      "position": [
+        0,
+        -1.65,
+        0
+      ],
       "rotationX": -1.5216
     },
-    "accentLerp": 0.15,
     "normalMap": "/assets/textures/floor-normal.png",
     "renderOrder": -1,
     "transparent": true,
@@ -352,35 +655,59 @@
     "fogStrippedOnReflect": true,
     "shaderConstants": {
       "runtimeTunable": false,
-      "normalScrollLayer1": [0.03, 0.02],
-      "normalScrollLayer2": [-0.025, 0.018],
-      "normalLayer2Scale": 1.7,
+      "reflectionParallax": "uv = coord.xy + coord.z * normal.xz * 0.05",
       "fresnelPower": 5.0,
-      "fresnelBoost": 0.5,
-      "specularSmoothstep": [0.5, 0.95],
-      "specularAdd": 0.12,
-      "baseColorMix": 0.25,
-      "alphaFadeSmoothstep": [0.35, 1.0]
+      "alphaFadeSmoothstep": [
+        0.5,
+        0.95
+      ]
     },
     "gui": {
       "visible": true,
-      "positionYRange": [-6, 2],
-      "positionXRange": [-10, 10],
-      "positionZRange": [-10, 10],
-      "rotationXRange": [-3.14159, 0],
-      "uReflectivityRange": [0, 1],
-      "uDistortRange": [0, 0.15],
-      "uFlowRange": [0, 4],
-      "uNormalRepeatRange": [0.1, 6],
-      "uContrastRange": [0.5, 3],
-      "uTintRange": [0, 1],
-      "uRadiusRange": [5, 60]
+      "positionYRange": [
+        -6,
+        2
+      ],
+      "rotationXRange": [
+        -3.14159,
+        0
+      ],
+      "uReflectivityRange": [
+        0,
+        1
+      ],
+      "uFloorMixStrengthRange": [
+        0,
+        30
+      ],
+      "uDistRange": [
+        0,
+        5
+      ],
+      "uNormalScaleRange": [
+        0.2,
+        4
+      ],
+      "uInkWarpRange": [
+        0,
+        0.15
+      ],
+      "uRadiusRange": [
+        5,
+        60
+      ]
     }
   },
-
   "mistFront": {
-    "geometry": [11, 8],
-    "position": [0, 0.3, 3.0],
+    "geometry": [
+      11,
+      8
+    ],
+    "position": [
+      0,
+      0.3,
+      3.0
+    ],
     "renderOrder": 50,
     "transparent": true,
     "depthWrite": false,
@@ -393,49 +720,102 @@
       "runtimeTunable": false,
       "fbmOctaves": 5,
       "warpScale": 2.0,
-      "warpDrift": [0.01, 0.008],
+      "warpDrift": [
+        0.01,
+        0.008
+      ],
       "fbmScale": 2.6,
       "fbmTimeScale": 0.006,
-      "densitySmoothstep": [0.3, 0.85],
-      "sideMaskLeft": [0.45, 0.06],
-      "sideMaskRight": [0.55, 0.94],
-      "verticalFade": [0.0, 0.12, 1.0, 0.88]
+      "densitySmoothstep": [
+        0.3,
+        0.85
+      ],
+      "sideMaskLeft": [
+        0.45,
+        0.06
+      ],
+      "sideMaskRight": [
+        0.55,
+        0.94
+      ],
+      "verticalFade": [
+        0.0,
+        0.12,
+        1.0,
+        0.88
+      ]
     }
   },
-
   "projector": {
     "visible": true,
     "color": "#ffffff",
-    "intensity": 220,
+    "intensityIdle": 120,
+    "intensityMax": 400,
+    "presenceNote": "intensity = idle + (max-idle) * smoothed card proximity (cursor vs card rect, 1.5u margin, lerp 0.05)",
     "distance": 0,
     "angle": 0.785398,
-    "penumbra": 0.95,
+    "penumbra": 1,
     "decay": 2,
-    "basePosition": [0, 0, 3.7],
-    "target": [0, 0, 0],
+    "basePosition": [
+      0,
+      0,
+      3.25
+    ],
+    "target": [
+      0,
+      0,
+      0
+    ],
     "shadowCamera": {
       "near": 0.5,
       "far": 12,
       "focus": 1
     },
-    "cursorTravel": 0,
+    "cursorTravel": 1.0,
     "mapRotation": 3.14159,
     "gui": {
-      "intensityRange": [0, 400],
-      "angleRange": [0.05, 1.5708],
-      "penumbraRange": [0, 1],
-      "positionZRange": [0.5, 6],
-      "travelRange": [0, 5]
-    }
+      "intensityRange": [
+        0,
+        400
+      ],
+      "angleRange": [
+        0.05,
+        1.5708
+      ],
+      "penumbraRange": [
+        0,
+        1
+      ],
+      "positionZRange": [
+        0.5,
+        6
+      ],
+      "travelRange": [
+        0,
+        5
+      ]
+    },
+    "tint": 0.0,
+    "note": "Light color tweens to lerp(white, atmo.glow, tint) on project switch (spot-projector transition())."
   },
-
   "environment": {
     "enabled": false,
     "groundY": -1.6,
-    "groundSize": [60, 60],
-    "fbmOctaves": { "desktop": 4, "mobile": 2 },
+    "groundSize": [
+      60,
+      60
+    ],
+    "fbmOctaves": {
+      "desktop": 4,
+      "mobile": 2
+    },
     "transition": {
-      "stageOffsets": [0, 0.6, 1.2, 1.8],
+      "stageOffsets": [
+        0,
+        0.6,
+        1.2,
+        1.8
+      ],
       "stageDuration": 3.5,
       "totalDuration": 5.3
     },
@@ -451,51 +831,114 @@
       "accentWash": 0.05,
       "alphaVis": 0.85
     },
-    "blurIterations": { "desktop": 2, "mobile": 1 },
+    "blurIterations": {
+      "desktop": 2,
+      "mobile": 1
+    },
     "volumePlanes": {
       "desktop": [
-        { "z": -9, "phase": 0.0, "opacity": 0.05 },
-        { "z": -6, "phase": 1.3, "opacity": 0.05 },
-        { "z": -3.5, "phase": 2.6, "opacity": 0.045 },
-        { "z": -1, "phase": 4.0, "opacity": 0.035 },
-        { "z": 1.4, "phase": 5.5, "opacity": 0.025 }
+        {
+          "z": -9,
+          "phase": 0.0,
+          "opacity": 0.05
+        },
+        {
+          "z": -6,
+          "phase": 1.3,
+          "opacity": 0.05
+        },
+        {
+          "z": -3.5,
+          "phase": 2.6,
+          "opacity": 0.045
+        },
+        {
+          "z": -1,
+          "phase": 4.0,
+          "opacity": 0.035
+        },
+        {
+          "z": 1.4,
+          "phase": 5.5,
+          "opacity": 0.025
+        }
       ],
       "mobile": [
-        { "z": -7, "phase": 0.0, "opacity": 0.05 },
-        { "z": -3, "phase": 2.1, "opacity": 0.045 }
+        {
+          "z": -7,
+          "phase": 0.0,
+          "opacity": 0.05
+        },
+        {
+          "z": -3,
+          "phase": 2.1,
+          "opacity": 0.045
+        }
       ]
     },
-    "volumePlaneGeometry": [34, 26],
+    "volumePlaneGeometry": [
+      34,
+      26
+    ],
     "volumePlaneY": 0.3,
     "volumePlaneXStaggerFactor": 0.4,
     "volumePlaneRenderOrder": -1,
     "volumeShaderConstants": {
       "runtimeTunable": false,
       "fbmScale": 2.2,
-      "driftSpeed": [0.01, 0.008],
-      "densitySmoothstep": [0.35, 0.95],
+      "driftSpeed": [
+        0.01,
+        0.008
+      ],
+      "densitySmoothstep": [
+        0.35,
+        0.95
+      ],
       "edgeFade": 0.32
     },
     "ceiling": {
-      "geometry": [54, 40],
-      "position": [-1.5, 7.0, -5.0],
+      "geometry": [
+        54,
+        40
+      ],
+      "position": [
+        -1.5,
+        7.0,
+        -5.0
+      ],
       "rotationX": -1.06814,
       "renderOrder": -2,
       "shaderConstants": {
         "runtimeTunable": false,
         "fbmScale": 3.0,
-        "warpDrift": [0.02, 0.018],
+        "warpDrift": [
+          0.02,
+          0.018
+        ],
         "warpStrength": 1.6,
         "timeScale": 0.01,
-        "densitySmoothstep": [0.32, 0.88],
+        "densitySmoothstep": [
+          0.32,
+          0.88
+        ],
         "edgeFade": 0.38,
         "alpha": 0.24,
-        "brightnessMix": [0.55, 0.65]
+        "brightnessMix": [
+          0.55,
+          0.65
+        ]
       }
     },
     "glow": {
-      "geometry": [18, 18],
-      "position": [5.5, 5.0, -8.0],
+      "geometry": [
+        18,
+        18
+      ],
+      "position": [
+        5.5,
+        5.0,
+        -8.0
+      ],
       "opacity": 0.5,
       "blending": "AdditiveBlending",
       "toneMapped": false,
@@ -508,7 +951,6 @@
       "alpha": 0.5
     }
   },
-
   "cloudLayer": {
     "enabled": false,
     "foreground": {
@@ -516,11 +958,21 @@
       "blend": "normal",
       "opacity": 0.04,
       "mobileOpacityScale": 0.7,
-      "geometry": [14, 14],
-      "position": [0, 0.6, 3.0],
+      "geometry": [
+        14,
+        14
+      ],
+      "position": [
+        0,
+        0.6,
+        3.0
+      ],
       "renderOrder": 5,
       "reuseTextureIndex": 2,
-      "drift": [0.0006, 0.0004],
+      "drift": [
+        0.0006,
+        0.0004
+      ],
       "rot": 0.0008,
       "phase": 1.0,
       "cross": 0.03
@@ -537,9 +989,16 @@
       {
         "tex": "/assets/clouds/cloudA.png",
         "size": 48,
-        "position": [-1, 3.5, -4],
+        "position": [
+          -1,
+          3.5,
+          -4
+        ],
         "tilt": -0.18,
-        "drift": [0.002, 0.0011],
+        "drift": [
+          0.002,
+          0.0011
+        ],
         "rot": 0.004,
         "phase": 0.0,
         "cross": 0.06,
@@ -549,9 +1008,16 @@
       {
         "tex": "/assets/clouds/cloudB.png",
         "size": 62,
-        "position": [1, 5.0, -6],
+        "position": [
+          1,
+          5.0,
+          -6
+        ],
         "tilt": -0.16,
-        "drift": [-0.0013, 0.0008],
+        "drift": [
+          -0.0013,
+          0.0008
+        ],
         "rot": -0.0026,
         "phase": 2.1,
         "cross": 0.045,
@@ -561,9 +1027,16 @@
       {
         "tex": "/assets/clouds/cloudC.png",
         "size": 78,
-        "position": [-2, 6.5, -8],
+        "position": [
+          -2,
+          6.5,
+          -8
+        ],
         "tilt": -0.14,
-        "drift": [0.0008, -0.0006],
+        "drift": [
+          0.0008,
+          -0.0006
+        ],
         "rot": 0.0015,
         "phase": 4.0,
         "cross": 0.035,
@@ -576,37 +1049,53 @@
       "featherEdge": 0.35,
       "crossfadeBase": 0.6,
       "crossfadeAmplitude": 0.4,
-      "albedoMix": [0.6, 0.8],
-      "luminanceWeights": [0.299, 0.587, 0.114]
+      "albedoMix": [
+        0.6,
+        0.8
+      ],
+      "luminanceWeights": [
+        0.299,
+        0.587,
+        0.114
+      ]
     }
   },
-
   "transitions": {
     "projectSwitchDurationMs": 800,
     "projectSwitchEasing": "smoothstep-quadratic",
     "wheelDebounceMs": 900,
     "wheelDeltaThreshold": 1,
     "accentRetint": {
-      "skyDome": "immediate",
-      "reflectiveFloor": "immediate",
-      "mistFront": "immediate",
+      "atmosphereMedium": "ONE gsap 1.2s sine.inOut tween of the shared colors — backdrop, fog veil, floor fog, and card tint all follow by reference",
+      "sideLight": "gsap 1.2s (color → atmo.glow)",
+      "projector": "gsap 1.2s (color → lerp(white, atmo.glow, tint))",
+      "reflectiveFloor": "via medium (distance fog color) — no per-layer call",
       "environment": "staggered ~5.3s when enabled",
       "cloudLayer": "4.0s when enabled"
     }
   },
-
   "navigation": {
     "wheelNavigation": true,
-    "keyboardNavigation": ["ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft"],
+    "keyboardNavigation": [
+      "ArrowDown",
+      "ArrowRight",
+      "ArrowUp",
+      "ArrowLeft"
+    ],
     "prefersReducedMotion": "disables camera parallax, wobble, card tilt, shader uTime"
   },
-
   "perProject": [
     {
       "id": "design-language-system",
       "title": "Design Language System",
       "envAccent": "#7fa0ff",
       "atmosphereColor": "#08080f",
+      "atmo": {
+        "base": "#111111",
+        "fog": "#e3e3e3",
+        "glow": "#dbdbdb",
+        "smoke": "#b25325"
+      },
       "coverImage": "/assets/projects/keploy.png",
       "lightingPresetIndex": 0
     },
@@ -615,6 +1104,12 @@
       "title": "Interactive Product Experience",
       "envAccent": "#aabbff",
       "atmosphereColor": "#0f0505",
+      "atmo": {
+        "base": "#4f5fd8",
+        "fog": "#ffffff",
+        "glow": "#ffffff",
+        "smoke": "#020210"
+      },
       "coverImage": null,
       "lightingPresetIndex": 1
     },
@@ -623,6 +1118,12 @@
       "title": "Brand & Web Platform",
       "envAccent": "#55ddaa",
       "atmosphereColor": "#04090a",
+      "atmo": {
+        "base": "#2f9a72",
+        "fog": "#ffffff",
+        "glow": "#ffffff",
+        "smoke": "#010504"
+      },
       "coverImage": null,
       "lightingPresetIndex": 2
     },
@@ -631,6 +1132,12 @@
       "title": "Analytics Dashboard",
       "envAccent": "#5577cc",
       "atmosphereColor": "#04070f",
+      "atmo": {
+        "base": "#35509f",
+        "fog": "#ffffff",
+        "glow": "#ffffff",
+        "smoke": "#010208"
+      },
       "coverImage": null,
       "lightingPresetIndex": 3
     },
@@ -639,11 +1146,16 @@
       "title": "Creative Experiments",
       "envAccent": "#ffaa44",
       "atmosphereColor": "#0d0a03",
+      "atmo": {
+        "base": "#b5641f",
+        "fog": "#ffffff",
+        "glow": "#ffffff",
+        "smoke": "#070301"
+      },
       "coverImage": null,
       "lightingPresetIndex": 4
     }
   ],
-
   "assets": {
     "skyEnvExr": "/assets/sky_env.exr",
     "cubePositions": "/assets/cube_positions.json",
@@ -657,15 +1169,13 @@
       "/assets/projects/keploy.png"
     ]
   },
-
   "sceneGuiMapping": {
     "description": "Maps lil-gui controls in scene-gui.js to JSON paths",
     "skyEnvironment": {
       "bg blurriness": "scene.backgroundBlurriness",
       "bg intensity": "scene.backgroundIntensity",
-      "env (light) intensity": "scene.environmentIntensity",
       "bg rotation": "scene.backgroundRotation.y",
-      "env rotation": "scene.environmentRotation.y"
+      "_removed": "env intensity/rotation rows dropped 2026-07-03 (env lighting off); ink-warp rows and God-rays folder dropped too"
     },
     "reflectiveFloor": {
       "visible": "reflectiveFloor.visible",
@@ -674,13 +1184,12 @@
       "offset z": "reflectiveFloor.transform.position[2]",
       "tilt x": "reflectiveFloor.transform.rotationX",
       "reflectivity": "reflectiveFloor.uniforms.uReflectivity",
-      "flow warp": "reflectiveFloor.uniforms.uDistort",
-      "flow speed": "reflectiveFloor.uniforms.uFlow",
-      "texture tiling": "reflectiveFloor.uniforms.uNormalRepeat",
-      "contrast": "reflectiveFloor.uniforms.uContrast",
-      "metal tint": "reflectiveFloor.uniforms.uTint",
+      "mix strength": "reflectiveFloor.uniforms.uFloorMixStrength",
+      "normal distortion": "reflectiveFloor.uniforms.uDist",
+      "normal scale x/y": "reflectiveFloor.uniforms.uNormalScale",
+      "ink warp": "reflectiveFloor.uniforms.uInkWarp",
       "fade radius": "reflectiveFloor.uniforms.uRadius",
-      "tint": "reflectiveFloor.reflector.color"
+      "base color": "reflectiveFloor.reflector.color"
     },
     "camera": {
       "travel X": "camera.parallax.travelX",
@@ -701,11 +1210,81 @@
       "bloom threshold": "post.bloom.luminanceThreshold",
       "exposure": "renderer.toneMappingExposure"
     },
-    "cubeRipple": {
+    "atmosphere": {
+      "visible": "atmosphere mesh.visible",
+      "base/fog/glow/smoke color": "atmosphere.defaultPalette + perProject[].atmo",
+      "smoke amount/scale/speed/mask start": "atmosphere.uniforms.uSmoke*",
+      "fog amount/scale/energy gain/ink": "atmosphere.uniforms.uFog* + uInkFog",
+      "glow intensity/energy gain/radius/stretch/pos/mouse shift": "atmosphere.uniforms.uGlow*"
+    },
+    "cursorEnergy": {
+      "gain": "atmosphere.cursorEnergy.energyGain",
+      "decay tau (s)": "atmosphere.cursorEnergy.energyTau",
+      "energy (live)": "read-only uEnergy readout"
+    },
+    "sideLight": {
+      "visible": "sideLight light.visible",
+      "intensity": "sideLight.baseIntensity",
+      "energy boost": "sideLight.energyBoost",
+      "x/y/z": "sideLight.restPosition",
+      "cursor travel": "sideLight.cursorTravel"
+    },
+    "cubes": {
+      "edge keep frac": "voxel.shaderUniforms.uKeepFrac",
+      "dense core radius": "voxel.shaderUniforms.uDenseRadius",
+      "erode end radius": "voxel.shaderUniforms.uFadeRadius",
+      "bite size (freq)": "voxel.shaderUniforms.uCullScale",
+      "bite drift (0=frozen)": "voxel.shaderUniforms.uCullDrift",
+      "depth scatter (z)": "voxel.shaderUniforms.uDepthScatter",
       "ripple amp": "voxel.shaderUniforms.uRippleAmp",
       "ripple period (s)": "voxel.shaderUniforms.uRipplePeriod",
       "flow displace": "voxel.shaderUniforms.uMouseFactor",
-      "flow brightness": "voxel.shaderUniforms.uMouseLightness"
+      "flow brightness": "voxel.shaderUniforms.uMouseLightness",
+      "atmo tint amt": "voxel.shaderUniforms.uFogAmt"
+    },
+    "director": {
+      "Density": "scales uL1/2/3 alphas + inversely biases uAbsorb",
+      "Wind": "magnitude multiplier on medium uWind",
+      "Scattering": "uScatterGain + uHaloGain",
+      "Mood": "uBackdropFloor down + vignette darkness up + grain opacity up"
+    },
+    "fogVeil": {
+      "all rows": "fogVeil.uniforms.*"
+    }
+  },
+  "atmosphereMedium": {
+    "note": "Shared atmospheric medium (atmosphere-medium.js) — single source of truth. Backdrop, fog veil, floor fog, and the voxel card's uFog tint adopt its uniform OBJECTS by reference (setInk pattern); one medium.transition(palette) recolors the whole world. Owns the light kernel, wind, clocks, and the light-breathing life pack.",
+    "palette": "perProject[].atmo (project 0 regraded for the moody pass; 1-4 pending approval)",
+    "lightKernel": {
+      "uGlowPos": [
+        1.08,
+        0.01
+      ],
+      "uGlowRadius": 0.96,
+      "uGlowStretch": 0.3,
+      "glowIntensity": 0.98
+    },
+    "wind": [
+      0.016,
+      -0.004
+    ],
+    "lifePack": {
+      "lightBreathing": "glowIntensity ±breatheAmt (0.135) on 7.3s + 11.7s sines, computed in medium.update()",
+      "cameraBreathing": "three-scene _tick: position ±0.02/±0.015 (9.2s/12.7s), fov ±0.15° (11s); skipped under reduced motion",
+      "evolvingNoise": "warp offsets drift on a 0.006 time scale so plumes change shape"
+    }
+  },
+  "fogVeil": {
+    "note": "Foreground haze (fog-veil.js) composited OVER card/floor/backdrop (renderOrder 20) — seats the card, fogs the ground junction. Consumes the medium by reference; nearest layer rides the wind fastest (x2.2) with its own domain offset. Also draws into the Reflector's mirror pass (desired).",
+    "uniforms": {
+      "uVeilScale": 2.85,
+      "uVeilSpeed": 0.051,
+      "uBottomStart": 0.52,
+      "uBottomMax": 1.0,
+      "uEdgeWidth": 0.225,
+      "uEdgeMax": 1.0,
+      "uNoiseFloor": 0.29,
+      "uLightResponse": 0.18
     }
   }
 }

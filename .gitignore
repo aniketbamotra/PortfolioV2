@@ -5,3 +5,8 @@ source-assets
 .DS_Store
 **/.DS_Store
 *.patch
+
+# local dev / scratch artifacts
+.playwright-mcp
+brainstron
+/*.png

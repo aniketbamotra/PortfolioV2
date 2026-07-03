@@ -9,15 +9,30 @@
 import * as THREE from 'three';
 
 const SKY_VERT = /* glsl */`
+  uniform sampler2D uInk;
+  uniform float uInkDisplace;
   varying vec3 vDir;
+
   void main(){
+    // Direction is derived from the ORIGINAL (undisplaced) vertex so the gradient/mist stay
+    // anchored while only the silhouette moves.
     vDir = normalize(position);
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+
+    // Sample the fluid dye by the dome's plane-projected direction (matches the fragment's
+    // uv), and push the vertex radially by the local ink density → a cursor-driven bumpy
+    // silhouette. Amplitude is small relative to the 300-unit radius.
+    vec2 iuv = (vDir.xz / (abs(vDir.y) + 0.55)) * 0.5 + 0.5;
+    float ink = texture2D(uInk, iuv).b;
+    vec3 displaced = position + vDir * ink * uInkDisplace;
+
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(displaced, 1.0);
   }`;
 
 const SKY_FRAG = /* glsl */`
   uniform float uTime;
   uniform vec3  uTop, uBottom, uMist, uAccent;
+  uniform sampler2D uInk;
+  uniform float uInkMist;
   varying vec3  vDir;
 
   float hash21(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
@@ -74,10 +89,20 @@ const SKY_FRAG = /* glsl */`
     vec3 col = mix(base, mistCol, density * 0.55);        // never fully opaque → won't obscure
     col += mistCol * shaft * 0.10;
 
+    // Reactive ink layer *behind* the FBM mist — cursor-painted fluid drifts through as an
+    // extra haze band, tinted like the mist so it reads as depth, not an overlay.
+    float ink = texture2D(uInk, uv * 0.5 + 0.5).b * lowMask;
+    col = mix(col, mistCol, clamp(ink * uInkMist, 0.0, 1.0));
+
     gl_FragColor = vec4(col, 1.0);
   }`;
 
 export function initSkyDome({ accent } = {}) {
+  // Flat placeholder so uInk is never null before the fluid dye is attached (mirrors the
+  // floor's flatNormal pattern). Black → zero ink until setInk swaps in the live texture.
+  const flatInk = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1, THREE.RGBAFormat);
+  flatInk.needsUpdate = true;
+
   const material = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
@@ -90,18 +115,29 @@ export function initSkyDome({ accent } = {}) {
       uBottom: { value: new THREE.Color(0x07090c) }, // horizon floor
       uMist:   { value: new THREE.Color(0xb8c0c8) }, // cool desaturated gray-white
       uAccent: { value: new THREE.Color(accent || '#7fa0ff') },
+      uInk:         { value: flatInk }, // fluid dye — swapped in via setInk
+      uInkMist:     { value: 0.5 },     // how strongly ink thickens the mist
+      uInkDisplace: { value: 6.0 },     // radial vertex push from ink (world units)
     },
   });
 
-  // Radius must stay inside the camera far plane (100); large enough to enclose the scene.
-  const geometry = new THREE.SphereGeometry(90, 64, 32);
+  // Radius must stay inside the camera far plane (2000); large enough to enclose the scene.
+  // Icosahedron gives uniform, pole-free tessellation — the base a future vertex-displacement
+  // noise layer needs so the sculpted silhouette won't pinch or facet. Detail is exponential
+  // (tris ≈ 20 * 4^detail): 8 ≈ 1.3M. Bump toward 10 (reference) only if displacement looks
+  // faceted; the shader colors from direction, so radius/detail are visually neutral until then.
+  const DOME_RADIUS = 300;
+  const DOME_DETAIL = 8;
+  const geometry = new THREE.IcosahedronGeometry(DOME_RADIUS, DOME_DETAIL);
   const mesh = new THREE.Mesh(geometry, material);
   mesh.renderOrder = -1000; // draw first → everything else paints over it
 
   return {
     mesh,
+    material,
     update(time) { material.uniforms.uTime.value = time; },
     setColor(hex) { material.uniforms.uAccent.value.set(hex); },
-    destroy() { geometry.dispose(); material.dispose(); },
+    setInk(uniform) { material.uniforms.uInk = uniform; }, // adopt the live { value } dye object
+    destroy() { geometry.dispose(); material.dispose(); flatInk.dispose(); },
   };
 }

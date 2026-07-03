@@ -15,6 +15,10 @@ export const PROJECTS = [
     heroInOrbit: true,
     atmosphereColor: '#08080f',
     envAccent: '#7fa0ff',     // environment tint (ground/clouds/haze/glow)
+    // Screen-space atmosphere palette: base = near-black frame tone, fog/glow = neutral
+    // silvers, smoke = warm rust tinting the dense masses. Project 0 hand-tuned 2026-07-03;
+    // projects 1-4 keep earlier values until regraded to match.
+    atmo: { base: '#111111', fog: '#e3e3e3', glow: '#dbdbdb', smoke: '#b25325' },
     shaderType: 'token-grid',
     coverImage: '/assets/projects/keploy.png',
     caseStudy: {
@@ -41,6 +45,7 @@ export const PROJECTS = [
     heroInOrbit: true,
     atmosphereColor: '#0f0505',
     envAccent: '#aabbff',
+    atmo: { base: '#4f5fd8', fog: '#ffffff', glow: '#ffffff', smoke: '#020210' },
     shaderType: 'particles',
     coverImage: null,
     caseStudy: {
@@ -67,6 +72,7 @@ export const PROJECTS = [
     heroInOrbit: true,
     atmosphereColor: '#04090a',
     envAccent: '#55ddaa',
+    atmo: { base: '#2f9a72', fog: '#ffffff', glow: '#ffffff', smoke: '#010504' },
     shaderType: 'flow-field',
     coverImage: null,
     caseStudy: {
@@ -93,6 +99,7 @@ export const PROJECTS = [
     heroInOrbit: true,
     atmosphereColor: '#04070f',
     envAccent: '#5577cc',
+    atmo: { base: '#35509f', fog: '#ffffff', glow: '#ffffff', smoke: '#010208' },
     shaderType: 'data-stream',
     coverImage: null,
     caseStudy: null
@@ -113,6 +120,7 @@ export const PROJECTS = [
     heroInOrbit: true,
     atmosphereColor: '#0d0a03',
     envAccent: '#ffaa44',
+    atmo: { base: '#b5641f', fog: '#ffffff', glow: '#ffffff', smoke: '#070301' },
     shaderType: 'growth',
     coverImage: null,
     caseStudy: null
