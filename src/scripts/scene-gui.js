@@ -51,6 +51,8 @@ export function initSceneGui({ scene, renderer, bloomEffect, floor, projector, c
     fl.add(u.uNormalScale.value, 'y', 0.2, 4, 0.05).name('normal scale y');
     fl.add(u.uFogNear, 'value', 0, 30, 0.5).name('fog near');
     fl.add(u.uFogFar, 'value', 5, 60, 0.5).name('fog far');
+    fl.add(u.uWashGain, 'value', 0, 0.5, 0.005).name('glow wash');
+    fl.add(u.uContactDark, 'value', 0, 1, 0.01).name('contact shadow');
     fl.add(u.uRadius, 'value', 5, 60, 0.5).name('fade radius');
     const proxy = { base: '#' + u.color.value.getHexString() };
     fl.addColor(proxy, 'base').name('base color').onChange((v) => u.color.value.set(v));
@@ -131,6 +133,17 @@ export function initSceneGui({ scene, renderer, bloomEffect, floor, projector, c
     }
     at.add(u.uGlowEnergyGain, 'value', 0, 2, 0.01).name('glow energy gain');
     at.add(u.uGlowRadius, 'value', 0.05, 2, 0.01).name('glow radius');
+    at.add(u.uCoreSize, 'value', 0.05, 1, 0.01).name('core size (frac)');
+    at.add(u.uCoreBoost, 'value', 0, 4, 0.05).name('core boost');
+    const hotProxy = { hot: '#' + u.uHotColor.value.getHexString() };
+    at.addColor(hotProxy, 'hot').name('hot color').onChange((v) => u.uHotColor.value.set(v));
+    at.add(u.uLidDensity, 'value', 0, 1.5, 0.01).name('ceiling lid density');
+    at.add(u.uLidStart, 'value', 0, 1, 0.01).name('ceiling lid start');
+    at.add(u.uPocketIntensity, 'value', 0, 2, 0.01).name('card pocket intensity');
+    at.add(u.uPocketRadius, 'value', 0.1, 1.5, 0.01).name('card pocket radius');
+    at.add(u.uPocketStretch, 'value', 0.2, 3, 0.05).name('card pocket stretch');
+    at.add(u.uPocketPos.value, 'x', -1, 1, 0.01).name('card pocket x');
+    at.add(u.uPocketPos.value, 'y', -1, 1, 0.01).name('card pocket y');
     at.add(u.uGlowStretch, 'value', 0.1, 4, 0.05).name('glow stretch (v)');
     at.add(u.uGlowPos.value, 'x', -1.5, 1.5, 0.01).name('glow pos x');
     at.add(u.uGlowPos.value, 'y', -1, 1, 0.01).name('glow pos y');
@@ -225,6 +238,8 @@ export function initSceneGui({ scene, renderer, bloomEffect, floor, projector, c
     addEffectToggle(post, g, 'grade enabled');
     post.add(g, 'amount', 0, 1, 0.01).name('grade amount');
     post.add(g, 'desat', 0, 1, 0.01).name('grade desat');
+    post.add(g, 'lift', 0, 0.2, 0.005).name('grade shadow lift');
+    post.add(g, 'highBend', 0, 1, 0.01).name('grade high bend');
     const gp = { shadow: '#' + g.shadowTint.getHexString(), highlight: '#' + g.highlightTint.getHexString() };
     post.addColor(gp, 'shadow').name('grade shadow tint').onChange((v) => g.shadowTint.set(v));
     post.addColor(gp, 'highlight').name('grade highlight tint').onChange((v) => g.highlightTint.set(v));

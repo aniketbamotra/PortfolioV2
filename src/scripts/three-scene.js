@@ -370,7 +370,7 @@ export function initScene(canvas) {
   _projector = initProjector({ scene });
   _projector.setImage(ORBIT_PROJECTS[currentIdx]?.coverImage || null);
   _projector.transition(_atmoFor(currentIdx).glow, { duration: 0 }); // palette tint from frame 1
-  _grade?.transition(_atmoFor(currentIdx).base, { duration: 0 });    // grade axis from frame 1
+  // (grade tints are static/GUI-owned — per-project color arrives via medium.transition)
 
   // Cursor velocity → flowmap texture (card-face UV space, 128² HalfFloat RT).
   // Sampled in the cube fragment shader to distort image UVs — image "pours" on cursor drag.
@@ -794,7 +794,6 @@ export function setProject(idx) {
   _medium?.transition(_atmoFor(idx));   // one tween — backdrop, veil, floor fog, card tint follow
   _sideLight?.transition(_atmoFor(idx).glow);
   _projector?.transition(_atmoFor(idx).glow);
-  _grade?.transition(_atmoFor(idx).base);
   _updateProjectUI(idx);
 }
 

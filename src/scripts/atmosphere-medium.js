@@ -29,10 +29,10 @@ export function initAtmosphereMedium({ palette } = {}) {
     uGlow:  { value: new THREE.Color(palette.glow) },
     uSmoke: { value: new THREE.Color(palette.smoke) },
     // light kernel (aspect-corrected centered space) — tuned 2026-07-03: light hugs the
-    // right edge (x 1.08), wide flat band
+    // right edge (x 1.08), tall column (sun-behind-fog, ref orange env)
     uGlowPos:       { value: new THREE.Vector2(1.08, 0.01) },
     uGlowRadius:    { value: 0.96 },
-    uGlowStretch:   { value: 0.3 },
+    uGlowStretch:   { value: 0.95 },
     uGlowIntensity: { value: 0.98 }, // written each frame from params (breathing)
     // one wind direction for the whole world (p-units / second)
     uWind: { value: new THREE.Vector2(0.016, -0.004) },

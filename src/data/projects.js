@@ -15,10 +15,11 @@ export const PROJECTS = [
     heroInOrbit: true,
     atmosphereColor: '#08080f',
     envAccent: '#7fa0ff',     // environment tint (ground/clouds/haze/glow)
-    // Screen-space atmosphere palette: base = near-black frame tone, fog/glow = neutral
-    // silvers, smoke = warm rust tinting the dense masses. Project 0 hand-tuned 2026-07-03;
-    // projects 1-4 keep earlier values until regraded to match.
-    atmo: { base: '#111111', fog: '#e3e3e3', glow: '#dbdbdb', smoke: '#b25325' },
+    // Screen-space atmosphere palette: base = near-black frame tone, fog = neutral scatter
+    // master, glow = MID station of the temperature ramp (smoke → glow → hot), smoke = warm
+    // rust tinting the dense masses. Project 0 hand-tuned 2026-07-03; projects 1-4 keep
+    // earlier values until regraded to match.
+    atmo: { base: '#111111', fog: '#e3e3e3', glow: '#e8913f', smoke: '#b25325' },
     shaderType: 'token-grid',
     coverImage: '/assets/projects/keploy.png',
     caseStudy: {

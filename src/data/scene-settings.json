@@ -221,10 +221,12 @@
       "clampMax": 1.0
     },
     "grade": {
-      "note": "final split-tone grade (grade-effect.js) in the last EffectPass (CA → grade → vignette → grain). Desaturates toward neutral then applies a luminance temperature ramp: uShadowTint (tweens to each project's atmo.base hue at HSL sat×0.35 / L 0.62) → uHighlightTint warm white. The 'film LUT' unifying all hue families (ref: one-hue world).",
-      "shadowTint": "#b98a6a (rest default; per-project via transition)",
-      "highlightTint": "#fff6ea",
-      "desat": 0.35,
+      "note": "final grade (grade-effect.js) in the last EffectPass (CA → grade → vignette → grain). Since the cinematic pass, HUE lives in the world (atmosphere temperature ramp) and the grade shapes VALUE only: neutral defaults (desat 0, grey shadow tint), shadow LIFT (uLift×shadowTint bed — blacks float, never crush) and highlight BEND (uHighBend — hot pixels converge on warm yellow-white, never pure white). Tints are static/GUI-owned; per-project transition() was removed 2026-07-03 (color arrives via medium.transition).",
+      "shadowTint": "#cecece (static — neutral lift; warm-dark like #8a6a55 would float blacks maroon instead)",
+      "highlightTint": "#ffdf9e",
+      "desat": 0,
+      "lift": 0.05,
+      "highBend": 0.35,
       "amount": 0.8
     },
     "afterimage": {
@@ -289,7 +291,7 @@
   },
   "atmosphere": {
     "mirrorFix": "uFlipX — backdrop is a clip-space quad, identical in any camera; onBeforeRender sets uFlipX=1 for non-main cameras so the floor Reflector's x-mirrored projective sampling cancels (glow reflects on its own side).",
-    "note": "Screen-space backdrop (atmosphere.js) — absorption/scattering cloudscape. Three wind-advected noise layers (depth parallax x1/x0.6/x1.6); transmittance = exp(-density*uAbsorb); backdrop energized only by the light kernel; in-scatter = fog color * light * (1-transmittance); hot core where dense fog meets the light. Darkness away from the light falls out of the math. Colors/kernel/wind/clocks adopted from atmosphereMedium by reference.",
+    "note": "Screen-space backdrop (atmosphere.js) — absorption/scattering cloudscape. Three wind-advected noise layers (depth parallax x1/x0.6/x1.6); transmittance = exp(-density*uAbsorb). Cinematic pass 2026-07-03: TWO-LOBE light kernel (broad skirt + tight hot core uCoreSize/uCoreBoost — sun-behind-fog column at the frame edge); temperature ramp along light intensity (uSmoke → uGlow → uHotColor, one hue axis) drives scatter/halo/core colors; CEILING LID (uLidDensity/uLidStart, screen-space, l1-modulated) — dark top band comes from smoke OCCLUDING the lit medium; lifted uBackdropFloor — 'dark' is dim rust, never black (the medium is the light fixture). Colors/kernel/wind/clocks adopted from atmosphereMedium by reference.",
     "mobileDefine": "MOBILE — fbm3 everywhere, layer 3 skipped (isMobile = width < 768)",
     "cursorEnergy": {
       "note": "Scalar integrated in _tick: energy += pointerSpeed * gain * dt, then *= exp(-dt/tau). Drives L3 detail, glow intensity, and the side light swell.",
@@ -320,19 +322,29 @@
         0.01
       ],
       "uGlowRadius": 0.96,
-      "uGlowStretch": 0.3,
+      "uGlowStretch": 0.95,
       "uGlowMouseShift": 0.03,
       "uAbsorb": 5.55,
-      "uScatterGain": 0.24,
-      "uHaloGain": 0.4,
-      "uBackdropFloor": 0.12
+      "uScatterGain": 0.3,
+      "uHaloGain": 0.55,
+      "uBackdropFloor": 0.5,
+      "uCoreSize": 0.5,
+      "uCoreBoost": 3.2,
+      "uHotColor": "#ffd27a",
+      "uLidDensity": 0.95,
+      "uLidStart": 0.52,
+      "uPocketPos": [0.0, 0.05],
+      "uPocketRadius": 0.5,
+      "uPocketStretch": 0.8,
+      "uPocketIntensity": 0.5
     },
+    "pocketNote": "backlight pocket — stationary second kernel in p-space behind the card (screen center), so the card and fringe silhouette against bright fog (ref: brightest mid-frame fog sits behind the voxel wall)",
     "parallaxFactor": 0.03,
     "transitionDuration": 1.2,
     "defaultPalette": {
       "base": "#111111",
       "fog": "#e3e3e3",
-      "glow": "#dbdbdb",
+      "glow": "#e8913f",
       "smoke": "#b25325"
     },
     "shaderConstants": {
@@ -623,7 +635,7 @@
     ]
   },
   "reflectiveFloor": {
-    "note": "Reference dark-mirror formula (brainstron/reference_vals.md): dark-gray base × reflection × mixStrength, ONE static soft normal map distorting the reflection (no time scroll). All floor motion comes from the reflected atmosphere. setColor() is a no-op — per-project hue arrives via the reflection. Moody pass: distance fog inside the shader converges the far ground to the medium's base color (horizon dissolves); fog density churns with a 1-octave field sample; ink lookup drifts with the shared wind.",
+    "note": "Reference dark-mirror formula (brainstron/reference_vals.md): dark-gray base × reflection × mixStrength, ONE static soft normal map distorting the reflection (no time scroll). All floor motion comes from the reflected atmosphere. setColor() is a no-op — per-project hue arrives via the reflection. Moody pass: distance fog inside the shader converges the far ground to the medium's base color (horizon dissolves); fog density churns with a 1-octave field sample; ink lookup drifts with the shared wind. Cinematic pass 2026-07-03: GLOW WASH (uWashGain × medium glow color, smoothstep across world-x toward the light, noise-breathing) lights the dirt plane from the column side; CONTACT SHADOW (uContactDark, gaussian around the origin) seats the card on the ground.",
     "enabled": true,
     "radius": 30,
     "segments": 128,
@@ -646,7 +658,10 @@
       "uRadius": 23,
       "uInkWarp": 0.0,
       "uFogNear": 4.0,
-      "uFogFar": 18.0
+      "uFogFar": 18.0,
+      "uWashGain": 0.12,
+      "uContactDark": 0.45,
+      "uGlowCol": "adopted from medium.u.uGlow by reference"
     },
     "transform": {
       "position": [
@@ -1101,7 +1116,7 @@
       "atmo": {
         "base": "#111111",
         "fog": "#e3e3e3",
-        "glow": "#dbdbdb",
+        "glow": "#e8913f",
         "smoke": "#b25325"
       },
       "coverImage": "/assets/projects/keploy.png",
@@ -1269,7 +1284,7 @@
         0.01
       ],
       "uGlowRadius": 0.96,
-      "uGlowStretch": 0.3,
+      "uGlowStretch": 0.95,
       "glowIntensity": 0.98
     },
     "wind": [

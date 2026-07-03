@@ -36,9 +36,12 @@ const FLOOR_FRAG = /* glsl */`
   uniform float     uReflectivity, uMirror, uFloorMixStrength, uDist, uRadius, uInkWarp;
   uniform vec2      uNormalScale;
   uniform vec3      uBase;                 // shared medium base — the sky the ground dissolves into
+  uniform vec3      uGlowCol;              // shared medium glow — the warm wash the light throws
   uniform vec2      uWind;                 // shared medium wind
   uniform float     uTime;                 // shared medium clock
   uniform float     uFogNear, uFogFar;     // distance-fog band (world units from camera)
+  uniform float     uWashGain;             // glow-side ground wash strength
+  uniform float     uContactDark;          // darkening under the card mass
   varying vec4 vUv;
   varying vec2 vLocal;
   varying vec2 vMeshUv;
@@ -70,6 +73,18 @@ const FLOOR_FRAG = /* glsl */`
 
     // Dark base × boosted reflection — hue and motion come from the reflected atmosphere.
     vec3 col = color * ((1.0 - min(1.0, uMirror)) + reflectColor.rgb * uFloorMixStrength);
+
+    // Glow-side ground wash (ref: the dirt plane catches the light column's gradient —
+    // bright toward the light, falling off across the floor). Noise-modulated by the
+    // shared field so the wash breathes with the same weather as the sky.
+    float ws = noise(vWorld.xz * 0.1 - uWind * uTime * 3.0);
+    float wash = smoothstep(-4.0, 20.0, vWorld.x) * mix(0.7, 1.3, ws);
+    col += uGlowCol * wash * uWashGain;
+
+    // Contact shadow — the card mass (at the origin) shades the ground beneath it,
+    // seating the card on the floor instead of letting it float over a lit plane.
+    float contact = exp(-dot(vWorld.xz * vec2(0.30, 0.55), vWorld.xz * vec2(0.30, 0.55)));
+    col *= 1.0 - uContactDark * contact;
 
     // Participate in the medium: far ground converges to the medium's base color (the actual
     // horizon kill — ground and sky meet at the same value). Fog density churns with a
@@ -127,10 +142,13 @@ export function initReflectiveFloor({ scene, accent, renderer, medium } = {}) {
         // medium participation — placeholders; the shared objects are adopted below
         // (Reflector clones this uniform table, so by-reference adoption must happen after).
         uBase:    { value: new THREE.Color(0x111111) },
+        uGlowCol: { value: new THREE.Color(0xe8913f) },
         uWind:    { value: new THREE.Vector2() },
         uTime:    { value: 0 },
         uFogNear: { value: 4.0 },
         uFogFar:  { value: 18.0 },
+        uWashGain:    { value: 0.12 },  // glow-side ground wash (ref: lit dirt plane)
+        uContactDark: { value: 0.45 },  // contact shadow under the card
       },
       vertexShader: FLOOR_VERT,
       fragmentShader: FLOOR_FRAG,
@@ -173,6 +191,7 @@ export function initReflectiveFloor({ scene, accent, renderer, medium } = {}) {
   // table above). The distance fog then recolors with every medium.transition() for free.
   if (medium) {
     floor.material.uniforms.uBase = medium.u.uBase;
+    floor.material.uniforms.uGlowCol = medium.u.uGlow;
     floor.material.uniforms.uWind = medium.u.uWind;
     floor.material.uniforms.uTime = medium.u.uTime;
   }

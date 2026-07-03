@@ -25,7 +25,7 @@ import { LIGHT_KERNEL_GLSL } from './atmosphere-medium.js';
 export const DEFAULT_ATMO = {
   base:  '#111111',
   fog:   '#e3e3e3',
-  glow:  '#dbdbdb',
+  glow:  '#e8913f', // mid station of the temperature ramp (smoke → glow → hot) — warm amber
   smoke: '#b25325',
 };
 
@@ -47,6 +47,10 @@ const ATMO_FRAG = /* glsl */`
   uniform float uL1Mix2, uWarp, uDensityGamma, uAbsorb, uCoreGain, uAmbientAmt;
   uniform float uScatterGain, uHaloGain, uBackdropFloor;
   uniform float uEnergyGain, uInkFog;
+  uniform float uCoreSize, uCoreBoost, uLidDensity, uLidStart;
+  uniform vec3  uHotColor;
+  uniform vec2  uPocketPos;
+  uniform float uPocketRadius, uPocketStretch, uPocketIntensity;
   uniform float uGlowIntensity, uGlowEnergyGain, uGlowRadius, uGlowStretch, uGlowMouseShift;
   uniform vec2  uGlowPos;
   uniform sampler2D uInk;
@@ -68,9 +72,25 @@ const ATMO_FRAG = /* glsl */`
     vec2 suv = vec2(mix(vUv.x, 1.0 - vUv.x, uFlipX), vUv.y);
     vec2 p = (suv - 0.5) * vec2(uAspect, 1.0) + uParallax;
 
-    // ── Shared light kernel ──
-    float light = lightKernel(p, uGlowPos + uMouse * uGlowMouseShift, uGlowRadius, uGlowStretch);
+    // ── Shared light kernel, two lobes (ref: sun-behind-fog column at the frame edge) ──
+    // broad soft skirt carries illumination across most of the frame; a tight hot core
+    // pins the yellow-white kernel at the edge. Same shared center/radius uniforms.
+    vec2  gpos  = uGlowPos + uMouse * uGlowMouseShift;
+    float skirt = lightKernel(p, gpos, uGlowRadius, uGlowStretch);
+    float core  = lightKernel(p, gpos, uGlowRadius * uCoreSize, uGlowStretch * 0.8);
+    // Backlight pocket — a stationary bright fog patch directly behind the card (ref: the
+    // brightest mid-frame fog sits behind the voxel wall, so the card and its fringe cubes
+    // silhouette against brightness instead of floating in darkness). Rides p-space, so it
+    // shifts with camera parallax like something anchored in the world.
+    float pocket = lightKernel(p, uPocketPos, uPocketRadius, uPocketStretch);
+    float light = skirt + core * uCoreBoost + pocket * uPocketIntensity;
     float lit   = light * (uGlowIntensity + uEnergy * uGlowEnergyGain);
+
+    // Blackbody-style temperature ramp along light intensity — penumbra sits at the smoke
+    // rust, mids at the glow color, the core bends toward hot near-white. ONE hue axis.
+    float lt = clamp(light, 0.0, 1.0);
+    vec3 lightTint = mix(uSmoke, uGlow, smoothstep(0.0, 0.55, lt));
+    lightTint = mix(lightTint, uHotColor, smoothstep(0.45, 1.0, lt));
 
     // ── Density field: three layers riding the shared wind with depth parallax ──
     // (per-layer wind factors x1 / x0.6 / x1.6; small private speeds add internal churn;
@@ -96,24 +116,32 @@ const ATMO_FRAG = /* glsl */`
     #endif
 
     float ink = texture2D(uInk, suv).b;
+    // Ceiling lid — smoke pools at the top of the frame (screen-space, parallax-free), so
+    // the dark upper band comes from OCCLUSION of the lit medium, not absence of light.
+    // Modulated by layer 1 so the lid keeps plume structure instead of a flat gradient.
+    float lid = smoothstep(uLidStart, 1.0, vUv.y) * uLidDensity * (0.45 + 0.75 * l1);
     float d = l1 * uL1Alpha
             + l2 * uL2Alpha * mix(1.0, l1 * 2.0, uL1Mix2)
             + l3 * uL3Alpha * (0.6 + uEnergy * uEnergyGain)
-            + ink * uInkFog;
+            + ink * uInkFog
+            + lid;
     d = pow(clamp(d, 0.0, 1.0), uDensityGamma);
 
     // ── Absorption / scattering assembly — darkness falls out of the math ──
     float transmit = exp(-d * uAbsorb);
-    // base sky seen through the fog mass, energized ONLY by the light
+    // base sky seen through the fog mass, energized by the light plus a lifted ambient bed
+    // (ref: "dark" is dim rust, never black — the medium always glows a little)
     vec3 backdrop = mix(uSmoke, uBase, transmit) * (uBackdropFloor + (1.0 - uBackdropFloor) * light);
-    // light scattered toward the camera by the fog, tinted by fog color + warm ambient
-    vec3 scatter = uFog * mix(vec3(1.0), uAmbient * 2.0, uAmbientAmt)
+    // light scattered toward the camera by the fog — hue rides the temperature ramp
+    // (deep rust far from the light → hot amber near it), warmed by the ambient tint
+    vec3 scatter = uFog * mix(uSmoke * 1.5, lightTint, smoothstep(0.1, 0.85, lt))
+                 * mix(vec3(1.0), uAmbient * 2.0, uAmbientAmt)
                  * lit * (1.0 - transmit) * uScatterGain;
-    // hot near-white core where dense fog meets the light
-    vec3 core = mix(uGlow, vec3(1.0), 0.55) * pow(d * lit, 1.5) * uCoreGain;
+    // hot core where dense fog meets the light — bends toward the hot color, not pure white
+    vec3 corec = mix(uHotColor, vec3(1.0), 0.3) * pow(d * lit, 1.5) * uCoreGain;
 
-    vec3 col = backdrop + scatter + core;
-    col += uGlow * light * lit * 0.35 * transmit * uHaloGain; // direct halo through THIN air only
+    vec3 col = backdrop + scatter + corec;
+    col += lightTint * light * lit * 0.35 * transmit * uHaloGain; // direct halo through THIN air only
 
     // Banding kill on near-black gradients (temporal dither, ±0.75/255).
     col += (hash21(gl_FragCoord.xy + fract(uTime)) - 0.5) * (1.5 / 255.0);
@@ -161,9 +189,21 @@ export function initAtmosphere({ medium, camera = null, isMobile = false } = {})
       uAbsorb:       { value: 5.55 },  // Beer-Lambert absorption through the mass
       uCoreGain:     { value: 1.75 },  // near-white core strength
       uAmbientAmt:   { value: 0.42 },
-      uScatterGain:   { value: 0.24 }, // in-scatter gain (Director "Scattering")
-      uHaloGain:      { value: 0.4 },  // direct halo gain (Director "Scattering")
-      uBackdropFloor: { value: 0.12 }, // residual sky visibility away from light (Director "Mood")
+      uScatterGain:   { value: 0.3 },  // in-scatter gain (Director "Scattering")
+      uHaloGain:      { value: 0.55 }, // direct halo gain (Director "Scattering")
+      uBackdropFloor: { value: 0.5 },  // ambient bed away from light (Director "Mood") — lifted: dim rust, never black
+      // two-lobe kernel + temperature ramp (ref: hot yellow-white column at the frame edge)
+      uCoreSize:   { value: 0.5 },     // hot-core radius as a fraction of the skirt radius
+      uCoreBoost:  { value: 3.2 },     // hot-core strength added on top of the skirt
+      uHotColor:   { value: new THREE.Color(0xffd27a) }, // kernel-center temperature (never pure white)
+      // ceiling smoke lid — occludes the lit medium at the top of the frame
+      uLidDensity: { value: 0.95 },
+      uLidStart:   { value: 0.52 },    // screen-y where the lid begins to gather
+      // backlight pocket — bright fog patch behind the card (card sits at screen center)
+      uPocketPos:       { value: new THREE.Vector2(0.0, 0.05) },
+      uPocketRadius:    { value: 0.5 },
+      uPocketStretch:   { value: 0.8 },  // wider than tall — matches the card's footprint
+      uPocketIntensity: { value: 0.5 },
       uEnergyGain:   { value: 0.7 },   // cursor energy → layer-3 detail boost
       uInkFog:       { value: 0.09 },  // fluid-dye trail → local fog thickening
       uGlowEnergyGain: { value: 0.0 },
