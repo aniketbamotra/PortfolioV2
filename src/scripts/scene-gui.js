@@ -9,7 +9,6 @@ import { BlendFunction } from 'postprocessing';
 
 export function initSceneGui({ scene, renderer, bloomEffect, floor, projector, camera, camParams, fx, fluid, sky, atmosphere, sideLight, atmoParams, ambient, medium, fogVeil }) {
   const gui = new GUI({ title: 'Scene' });
-  const TAU = Math.PI * 2;
 
   // A pmndrs Effect is toggled on/off by swapping its blend function to SKIP (fully bypassed)
   // and back. Effects that ship disabled carry their intended blend in `_originalBlend` so
@@ -30,30 +29,21 @@ export function initSceneGui({ scene, renderer, bloomEffect, floor, projector, c
   }};
   gui.add(actions, 'Copy settings');
 
-  const env = gui.addFolder('Sky / environment');
-  env.add(scene, 'backgroundBlurriness', 0, 1, 0.01).name('bg blurriness');
-  env.add(scene, 'backgroundIntensity', 0, 3, 0.01).name('bg intensity');
-  env.add(scene.backgroundRotation, 'y', 0, TAU, 0.01).name('bg rotation');
+  // Pruned 2026-07-03 (hard to find sliders): removed dead/stable folders — Sky/environment
+  // (dome disabled), Ambient + Side light (off), Tilt-shift (disabled), Camera, Cursor
+  // energy, Fluid ink, Fluid distortion — and long-stable rows inside the kept folders.
+  // Everything still works via its baked defaults; restore rows from git if needed.
 
   if (floor?.mesh) {
     const f = floor.mesh;
     const u = f.material.uniforms;
     const fl = gui.addFolder('Reflective floor');
+    fl.close();
     fl.add(f, 'visible').name('visible');
-    fl.add(f.position, 'y', -6, 2, 0.01).name('height (y)');
-    fl.add(f.position, 'x', -10, 10, 0.01).name('offset x');
-    fl.add(f.position, 'z', -10, 10, 0.01).name('offset z');
-    fl.add(f.rotation, 'x', -Math.PI, 0, 0.01).name('tilt x');
-    fl.add(u.uReflectivity, 'value', 0, 1, 0.01).name('reflectivity');
     fl.add(u.uFloorMixStrength, 'value', 0, 30, 0.1).name('mix strength');
     fl.add(u.uDist, 'value', 0, 5, 0.05).name('normal distortion');
-    fl.add(u.uNormalScale.value, 'x', 0.2, 4, 0.05).name('normal scale x');
-    fl.add(u.uNormalScale.value, 'y', 0.2, 4, 0.05).name('normal scale y');
-    fl.add(u.uFogNear, 'value', 0, 30, 0.5).name('fog near');
-    fl.add(u.uFogFar, 'value', 5, 60, 0.5).name('fog far');
     fl.add(u.uWashGain, 'value', 0, 0.5, 0.005).name('glow wash');
     fl.add(u.uContactDark, 'value', 0, 1, 0.01).name('contact shadow');
-    fl.add(u.uRadius, 'value', 5, 60, 0.5).name('fade radius');
     const proxy = { base: '#' + u.color.value.getHexString() };
     fl.addColor(proxy, 'base').name('base color').onChange((v) => u.color.value.set(v));
   }
@@ -114,7 +104,6 @@ export function initSceneGui({ scene, renderer, bloomEffect, floor, projector, c
     at.add(u.uL3Alpha, 'value', 0, 1.5, 0.01).name('L3 detail alpha');
     at.add(u.uL3Speed, 'value', 0, 0.3, 0.005).name('L3 detail speed');
     at.add(u.uL3Scale, 'value', 0.5, 10, 0.1).name('L3 detail scale');
-    at.add(u.uL1Mix2, 'value', 0, 1, 0.01).name('L1 gates L2');
     at.add(u.uWarp, 'value', 0, 4, 0.05).name('domain warp');
     at.add(u.uDensityGamma, 'value', 0.2, 3, 0.05).name('density gamma');
     at.add(u.uAbsorb, 'value', 0, 6, 0.05).name('absorption');
@@ -123,15 +112,9 @@ export function initSceneGui({ scene, renderer, bloomEffect, floor, projector, c
     at.add(u.uBackdropFloor, 'value', 0, 0.5, 0.005).name('backdrop floor');
     at.add(u.uCoreGain, 'value', 0, 3, 0.05).name('core gain');
     at.add(u.uAmbientAmt, 'value', 0, 1, 0.01).name('ambient tint amt');
-    at.add(u.uEnergyGain, 'value', 0, 2, 0.01).name('energy detail gain');
-    at.add(u.uInkFog, 'value', 0, 1, 0.01).name('fog ink (cursor trail)');
     if (medium) {
       at.add(medium.params, 'glowIntensity', 0, 3, 0.01).name('glow intensity');
-      at.add(medium.params, 'breatheAmt', 0, 0.15, 0.005).name('light breathing');
-      at.add(medium.u.uWind.value, 'x', -0.1, 0.1, 0.001).name('wind x');
-      at.add(medium.u.uWind.value, 'y', -0.1, 0.1, 0.001).name('wind y');
     }
-    at.add(u.uGlowEnergyGain, 'value', 0, 2, 0.01).name('glow energy gain');
     at.add(u.uGlowRadius, 'value', 0.05, 2, 0.01).name('glow radius');
     at.add(u.uCoreSize, 'value', 0.05, 1, 0.01).name('core size (frac)');
     at.add(u.uCoreBoost, 'value', 0, 4, 0.05).name('core boost');
@@ -147,7 +130,6 @@ export function initSceneGui({ scene, renderer, bloomEffect, floor, projector, c
     at.add(u.uGlowStretch, 'value', 0.1, 4, 0.05).name('glow stretch (v)');
     at.add(u.uGlowPos.value, 'x', -1.5, 1.5, 0.01).name('glow pos x');
     at.add(u.uGlowPos.value, 'y', -1, 1, 0.01).name('glow pos y');
-    at.add(u.uGlowMouseShift, 'value', 0, 0.3, 0.005).name('glow mouse shift');
   }
 
   // ── Fog veil (foreground haze over card/floor) ──
@@ -166,48 +148,10 @@ export function initSceneGui({ scene, renderer, bloomEffect, floor, projector, c
     fv.add(u.uLightResponse, 'value', 0, 1, 0.01).name('light response');
   }
 
-  // ── Cursor energy (drives atmosphere fog/glow + side light swell) ──
-  if (atmoParams) {
-    const en = gui.addFolder('Cursor energy');
-    en.add(atmoParams, 'energyGain', 0, 1, 0.01).name('gain');
-    en.add(atmoParams, 'energyTau', 0.2, 4, 0.05).name('decay tau (s)');
-    if (atmosphere?.material) {
-      en.add(atmosphere.material.uniforms.uEnergy, 'value', 0, 1, 0.001).name('energy (live)').listen().disable();
-    }
-  }
-
-  // ── Ambient (warm reference light lifting the cubes' shadow sides) ──
-  if (ambient) {
-    const am = gui.addFolder('Ambient');
-    const proxy = { color: '#' + ambient.color.getHexString() };
-    am.addColor(proxy, 'color').name('color').onChange((v) => ambient.color.set(v));
-    am.add(ambient, 'intensity', 0, 1, 0.01).name('intensity');
-  }
-
-  // ── Side light (real PointLight keying the card to the glow) ──
-  if (sideLight?.light) {
-    const p = sideLight.params;
-    const sl = gui.addFolder('Side light');
-    sl.add(sideLight.light, 'visible').name('visible');
-    sl.add(p, 'base', 0, 60, 0.5).name('intensity');
-    sl.add(p, 'energyBoost', 0, 3, 0.05).name('energy boost');
-    sl.add(p, 'x', -12, 12, 0.1).name('x');
-    sl.add(p, 'y', -6, 8, 0.1).name('y');
-    sl.add(p, 'z', -6, 8, 0.1).name('z');
-    sl.add(p, 'travel', 0, 3, 0.05).name('cursor travel');
-  }
-
-  if (camera && camParams) {
-    const cam = gui.addFolder('Camera');
-    cam.add(camParams, 'travelX', 0, 2, 0.01).name('travel X');
-    cam.add(camParams, 'travelY', 0, 1, 0.01).name('travel Y');
-    cam.add(camParams, 'zFactor', 0, 3, 0.05).name('z coupling');
-    cam.add(camParams, 'lerp', 0.005, 0.15, 0.001).name('smoothing');
-  }
-
   if (projector?.light) {
     const l = projector.light;
     const pj = gui.addFolder('Projector');
+    pj.close();
     pj.add(l, 'visible').name('visible');
     if (projector.params?.intensityMax !== undefined) {
       pj.add(projector.params, 'intensityIdle', 0, 400, 1).name('intensity (idle)');
@@ -215,10 +159,6 @@ export function initSceneGui({ scene, renderer, bloomEffect, floor, projector, c
     } else {
       pj.add(l, 'intensity', 0, 400, 1).name('intensity');
     }
-    pj.add(l, 'angle', 0.05, Math.PI / 2, 0.01).name('cone angle');
-    pj.add(l, 'penumbra', 0, 1, 0.01).name('penumbra (soft)');
-    pj.add(l.position, 'z', 0.5, 6, 0.05).name('distance (z)');
-    if (projector.params) pj.add(projector.params, 'travel', 0, 5, 0.05).name('cursor travel');
     if (projector.params?.tint !== undefined) pj.add(projector.params, 'tint', 0, 1, 0.01).name('palette tint');
   }
 
@@ -255,31 +195,6 @@ export function initSceneGui({ scene, renderer, bloomEffect, floor, projector, c
   if (fx?.noise) {
     addEffectToggle(post, fx.noise, 'grain enabled');
     post.add(fx.noise.blendMode.opacity, 'value', 0, 0.5, 0.01).name('grain opacity');
-  }
-
-  // ── Fluid ink (alien.js Fluid) — drives dome mist/displacement, floor warp, screen ripple ──
-  if (fluid) {
-    const fl = gui.addFolder('Fluid ink');
-    fl.add(fluid, 'densityDissipation', 0.9, 1.0, 0.001).name('ink fade');
-    fl.add(fluid, 'velocityDissipation', 0.9, 1.0, 0.001).name('flow fade');
-    fl.add(fluid, 'curlStrength', 0, 50, 1).name('curl (swirl)');
-    fl.add(fluid, 'radius', 0.05, 1, 0.01).name('splat size');
-  }
-
-  // ── Fluid distortion (full-screen ripple from the ink) ──
-  if (fx?.fluidDistortion) {
-    const d = gui.addFolder('Fluid distortion');
-    addEffectToggle(d, fx.fluidDistortion);
-    d.add(fx.fluidDistortion, 'strength', 0, 0.1, 0.001).name('strength');
-  }
-
-  // ── Tilt-shift focus band ──
-  if (fx?.tiltShift) {
-    const ts = gui.addFolder('Tilt-shift');
-    addEffectToggle(ts, fx.tiltShift);
-    ts.add(fx.tiltShift, 'offset', -0.5, 0.5, 0.01).name('band offset');
-    ts.add(fx.tiltShift, 'focusArea', 0, 1, 0.01).name('focus size');
-    ts.add(fx.tiltShift, 'feather', 0, 1, 0.01).name('feather');
   }
 
   // Cube controls — attached later, once the cube shader has compiled (uniforms live).

@@ -19,7 +19,7 @@ export const PROJECTS = [
     // master, glow = MID station of the temperature ramp (smoke → glow → hot), smoke = warm
     // rust tinting the dense masses. Project 0 hand-tuned 2026-07-03; projects 1-4 keep
     // earlier values until regraded to match.
-    atmo: { base: '#111111', fog: '#e3e3e3', glow: '#e8913f', smoke: '#b25325' },
+    atmo: { base: '#111111', fog: '#f2ddc2', glow: '#e8913f', smoke: '#b25325' },
     shaderType: 'token-grid',
     coverImage: '/assets/projects/keploy.png',
     caseStudy: {

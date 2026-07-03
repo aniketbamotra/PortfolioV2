@@ -15,7 +15,7 @@ export function initProjector({ scene, target = new THREE.Vector3(0, 0, 0) } = {
   const base = new THREE.Vector3(0, 0, 3.25);
 
   // Physical decay=2: intensity falls off with distance² → natural centre-bright vignette.
-  const light = new THREE.SpotLight(0xffffff, 120, 0, Math.PI / 4, 1, 2);
+  const light = new THREE.SpotLight(0xffffff, 400, 0, Math.PI / 4, 1, 2);
   light.position.copy(base);
   light.shadow.camera.near = 0.5;
   light.shadow.camera.far  = 12;
@@ -33,7 +33,7 @@ export function initProjector({ scene, target = new THREE.Vector3(0, 0, 0) } = {
   const params = {
     travel: 1.0,        // cursor → light translation range (world units)
     tint: 0.0,          // palette lean of the light color (off — tuned 2026-07-03; GUI can raise)
-    intensityIdle: 120, // rest brightness — card sits dark against the fog (ref: dark object, hot core)
+    intensityIdle: 400, // tuned 2026-07-03: full projection at rest — the lit medium wants a lit card
     intensityMax: 400,  // full projection when the cursor is on the card
   };
   let _presence = 0;    // smoothed cursor-on-card proximity driving the swell

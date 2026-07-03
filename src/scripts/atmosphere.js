@@ -24,7 +24,7 @@ import { LIGHT_KERNEL_GLSL } from './atmosphere-medium.js';
 // used before any project switch.
 export const DEFAULT_ATMO = {
   base:  '#111111',
-  fog:   '#e3e3e3',
+  fog:   '#f2ddc2', // scatter master — warm cream so lit fog never drifts grey-white
   glow:  '#e8913f', // mid station of the temperature ramp (smoke → glow → hot) — warm amber
   smoke: '#b25325',
 };
@@ -130,8 +130,11 @@ const ATMO_FRAG = /* glsl */`
     // ── Absorption / scattering assembly — darkness falls out of the math ──
     float transmit = exp(-d * uAbsorb);
     // base sky seen through the fog mass, energized by the light plus a lifted ambient bed
-    // (ref: "dark" is dim rust, never black — the medium always glows a little)
-    vec3 backdrop = mix(uSmoke, uBase, transmit) * (uBackdropFloor + (1.0 - uBackdropFloor) * light);
+    // (ref: "dark" is dim rust, never black — the medium always glows a little). Dense smoke
+    // occludes the ambient bed too — the ceiling lid must crush toward near-black maroon,
+    // not sit at half the bed like thin air does.
+    float bed = uBackdropFloor * (0.2 + 0.8 * transmit);
+    vec3 backdrop = mix(uSmoke, uBase, transmit) * (bed + (1.0 - bed) * light);
     // light scattered toward the camera by the fog — hue rides the temperature ramp
     // (deep rust far from the light → hot amber near it), warmed by the ambient tint
     vec3 scatter = uFog * mix(uSmoke * 1.5, lightTint, smoothstep(0.1, 0.85, lt))
@@ -199,11 +202,12 @@ export function initAtmosphere({ medium, camera = null, isMobile = false } = {})
       // ceiling smoke lid — occludes the lit medium at the top of the frame
       uLidDensity: { value: 0.95 },
       uLidStart:   { value: 0.52 },    // screen-y where the lid begins to gather
-      // backlight pocket — bright fog patch behind the card (card sits at screen center)
-      uPocketPos:       { value: new THREE.Vector2(0.0, 0.05) },
-      uPocketRadius:    { value: 0.5 },
+      // backlight pocket — subtle bright fog patch behind the card, biased to the card's
+      // dark (left) side so the fringe silhouettes without flattening the projector story
+      uPocketPos:       { value: new THREE.Vector2(-0.32, 0.08) },
+      uPocketRadius:    { value: 0.68 },
       uPocketStretch:   { value: 0.8 },  // wider than tall — matches the card's footprint
-      uPocketIntensity: { value: 0.5 },
+      uPocketIntensity: { value: 0.32 },
       uEnergyGain:   { value: 0.7 },   // cursor energy → layer-3 detail boost
       uInkFog:       { value: 0.09 },  // fluid-dye trail → local fog thickening
       uGlowEnergyGain: { value: 0.0 },

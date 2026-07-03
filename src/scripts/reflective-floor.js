@@ -134,8 +134,8 @@ export function initReflectiveFloor({ scene, accent, renderer, medium } = {}) {
         // ground reads as dark terrain with a faint horizon sheen rather than a mirror.
         uReflectivity:     { value: 0.0 },
         uMirror:           { value: 1.0 },     // 1 = pure reflection (base color term drops out)
-        uFloorMixStrength: { value: 6.8 },     // reflection boost
-        uDist:             { value: 1.5 },     // normal distortion strength
+        uFloorMixStrength: { value: 7.1 },     // reflection boost
+        uDist:             { value: 1.6 },     // normal distortion strength
         uNormalScale:      { value: new THREE.Vector2(1.6, 1.6) },
         uRadius:           { value: 23 },
         uInkWarp:          { value: 0.0 },     // cursor-ink reflection nudge (off, tuned 2026-07-03)
@@ -147,8 +147,10 @@ export function initReflectiveFloor({ scene, accent, renderer, medium } = {}) {
         uTime:    { value: 0 },
         uFogNear: { value: 4.0 },
         uFogFar:  { value: 18.0 },
-        uWashGain:    { value: 0.12 },  // glow-side ground wash (ref: lit dirt plane)
-        uContactDark: { value: 0.45 },  // contact shadow under the card
+        // Wash/contact ship OFF (tuned 2026-07-03): the floor is lifted globally via
+        // toneMappingExposure 0.38 instead — additive wash read as paint on the mirror.
+        uWashGain:    { value: 0.0 },   // glow-side ground wash (GUI-restorable)
+        uContactDark: { value: 0.0 },   // contact shadow under the card (GUI-restorable)
       },
       vertexShader: FLOOR_VERT,
       fragmentShader: FLOOR_FRAG,

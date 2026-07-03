@@ -82,16 +82,17 @@ export function initFogVeil({ medium, isMobile = false } = {}) {
       uGlowStretch: medium.u.uGlowStretch,
       uWind: medium.u.uWind,
       uTime: medium.u.uTime,
-      // veil-specific — tuned 2026-07-03 (dense low fog, strong side curtains)
+      // veil-specific — tuned 2026-07-03 (cinematic pass): bottom band OFF; the veil is
+      // edge-only side curtains that catch the light hard (response 0.88), framing the card.
       uAspect:        { value: 16 / 9 },
-      uVeilScale:     { value: 2.85 },
-      uVeilSpeed:     { value: 0.051 },
-      uBottomStart:   { value: 0.52 },
-      uBottomMax:     { value: 1.0 },
-      uEdgeWidth:     { value: 0.225 },
+      uVeilScale:     { value: 4.0 },
+      uVeilSpeed:     { value: 0.059 },
+      uBottomStart:   { value: 0.0 },
+      uBottomMax:     { value: 0.0 },
+      uEdgeWidth:     { value: 0.35 },
       uEdgeMax:       { value: 1.0 },
-      uNoiseFloor:    { value: 0.29 },
-      uLightResponse: { value: 0.18 },
+      uNoiseFloor:    { value: 0.25 },
+      uLightResponse: { value: 0.88 },
     },
   });
 

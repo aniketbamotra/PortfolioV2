@@ -200,10 +200,10 @@ export function initScene(canvas) {
   isMobile = window.innerWidth < 768;
   renderer.setPixelRatio(Math.min(devicePixelRatio, isMobile ? 1.5 : 2));
   renderer.toneMapping         = THREE.ACESFilmicToneMapping;
-  // Tuned 2026-07-02: exposure 0. Scene materials render into the composer's RT (no tone
-  // mapping applied there), so this only affects shaders that opt in via tonemapping includes
-  // — in practice it kills the floor's tonemapped output toward black, part of the tuned look.
-  renderer.toneMappingExposure = 0;
+  // Scene materials render into the composer's RT (no tone mapping applied there), so this
+  // only affects shaders that opt in via tonemapping includes — in practice, the floor.
+  // Tuned 2026-07-03: 0.38 lifts the ground into a dim lit plane (was 0 = crushed black).
+  renderer.toneMappingExposure = 0.38;
   renderer.outputColorSpace    = THREE.SRGBColorSpace;
 
   scene = new THREE.Scene();
@@ -255,15 +255,14 @@ export function initScene(canvas) {
   camera.lookAt(0, 0, 0);
 
   // Post-processing — bloom + vignette, plus DOF + chromatic aberration (cinematic).
-  bloomEffect = new BloomEffect({ intensity: 1.45, luminanceThreshold: 0.23, luminanceSmoothing: 0.7, mipmapBlur: true, radius: 0.6 });
+  bloomEffect = new BloomEffect({ intensity: 1.12, luminanceThreshold: 0.19, luminanceSmoothing: 0.7, mipmapBlur: true, radius: 0.31 });
   const vignetteEffect = new VignetteEffect({ darkness: 0.67, offset: 0 });
   // Film grain — OVERLAY keeps grain visible in shadows (SCREEN only lifts; premultiplied
-  // grain vanishes in a mostly-dark frame). Tuned 2026-07-03: OFF by default (blend SKIP);
-  // _originalBlend lets the GUI toggle restore the intended blend mode.
+  // grain vanishes in a mostly-dark frame). Tuned 2026-07-03: ON, opacity 0.32 — the film
+  // finish of the cinematic pass. _originalBlend lets the GUI toggle round-trip it.
   const noiseEffect = new NoiseEffect({ blendFunction: BlendFunction.OVERLAY, premultiply: false });
-  noiseEffect.blendMode.opacity.value = 0.161;
+  noiseEffect.blendMode.opacity.value = 0.32;
   noiseEffect._originalBlend = BlendFunction.OVERLAY;
-  noiseEffect.blendMode.blendFunction = BlendFunction.SKIP;
   const chromaticAberration = new ChromaticAberrationEffect({
     offset: new THREE.Vector2(0.0012, 0.0012), radialModulation: true, modulationOffset: 0.15,
   });

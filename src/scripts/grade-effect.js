@@ -38,7 +38,7 @@ const FRAG = /* glsl */`
 
 export class GradeEffect extends Effect {
   constructor({ shadowTint = 0xcecece, highlightTint = 0xffdf9e, desat = 0,
-                lift = 0.05, highBend = 0.35, amount = 0.8 } = {}) {
+                lift = 0.01, highBend = 0.29, amount = 0.79 } = {}) {
     super('GradeEffect', FRAG, {
       uniforms: new Map([
         ['uShadowTint',    new Uniform(new Color(shadowTint))],

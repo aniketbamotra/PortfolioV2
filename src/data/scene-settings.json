@@ -29,7 +29,7 @@
     },
     "mobileBreakpoint": 768,
     "toneMapping": "ACESFilmicToneMapping",
-    "toneMappingExposure": 0,
+    "toneMappingExposure": 0.38,
     "outputColorSpace": "SRGBColorSpace"
   },
   "scene": {
@@ -171,11 +171,11 @@
   },
   "post": {
     "bloom": {
-      "intensity": 1.45,
-      "luminanceThreshold": 0.23,
+      "intensity": 1.12,
+      "luminanceThreshold": 0.19,
       "luminanceSmoothing": 0.7,
       "mipmapBlur": true,
-      "radius": 0.6,
+      "radius": 0.31,
       "gui": {
         "intensityRange": [
           0,
@@ -225,9 +225,9 @@
       "shadowTint": "#cecece (static — neutral lift; warm-dark like #8a6a55 would float blacks maroon instead)",
       "highlightTint": "#ffdf9e",
       "desat": 0,
-      "lift": 0.05,
-      "highBend": 0.35,
-      "amount": 0.8
+      "lift": 0.01,
+      "highBend": 0.29,
+      "amount": 0.79
     },
     "afterimage": {
       "note": "custom feedback Pass (afterimage-pass.js) between RenderPass and bloom — max(cur, prev×damp) ping-pong; trails glow. Disabled under reduced motion. GUI: trails enabled / trail length.",
@@ -251,11 +251,11 @@
       ]
     },
     "noise": {
-      "note": "Film grain — pmndrs NoiseEffect, ships DISABLED (blend SKIP; _originalBlend restores OVERLAY via GUI).",
+      "note": "Film grain — pmndrs NoiseEffect, ON since the cinematic pass (OVERLAY; GUI toggle round-trips via _originalBlend).",
       "blendFunction": "OVERLAY",
       "premultiply": false,
-      "opacity": 0.161,
-      "enabled": false
+      "opacity": 0.32,
+      "enabled": true
     }
   },
   "fluidInk": {
@@ -315,14 +315,14 @@
       "uAmbientAmt": 0.42,
       "uEnergyGain": 0.7,
       "uInkFog": 0.09,
-      "uGlowIntensity": 0.98,
+      "uGlowIntensity": 2.05,
       "uGlowEnergyGain": 0.0,
       "uGlowPos": [
-        1.08,
-        0.01
+        1.46,
+        -0.32
       ],
       "uGlowRadius": 0.96,
-      "uGlowStretch": 0.95,
+      "uGlowStretch": 0.85,
       "uGlowMouseShift": 0.03,
       "uAbsorb": 5.55,
       "uScatterGain": 0.3,
@@ -333,12 +333,12 @@
       "uHotColor": "#ffd27a",
       "uLidDensity": 0.95,
       "uLidStart": 0.52,
-      "uPocketPos": [0.0, 0.05],
-      "uPocketRadius": 0.5,
+      "uPocketPos": [-0.32, 0.08],
+      "uPocketRadius": 0.68,
       "uPocketStretch": 0.8,
-      "uPocketIntensity": 0.5
+      "uPocketIntensity": 0.32
     },
-    "pocketNote": "backlight pocket — stationary second kernel in p-space behind the card (screen center), so the card and fringe silhouette against bright fog (ref: brightest mid-frame fog sits behind the voxel wall)",
+    "pocketNote": "backlight pocket — stationary second kernel in p-space behind the card, tuned subtle (0.32) and biased to the card's dark left side, so the fringe silhouettes without flattening the projector story",
     "parallaxFactor": 0.03,
     "transitionDuration": 1.2,
     "defaultPalette": {
@@ -649,7 +649,7 @@
     "uniforms": {
       "uReflectivity": 0.0,
       "uMirror": 1.0,
-      "uFloorMixStrength": 6.8,
+      "uFloorMixStrength": 7.1,
       "uDist": 1.5,
       "uNormalScale": [
         1.6,
@@ -659,8 +659,8 @@
       "uInkWarp": 0.0,
       "uFogNear": 4.0,
       "uFogFar": 18.0,
-      "uWashGain": 0.12,
-      "uContactDark": 0.45,
+      "uWashGain": 0.0,
+      "uContactDark": 0.0,
       "uGlowCol": "adopted from medium.u.uGlow by reference"
     },
     "transform": {
@@ -772,7 +772,7 @@
   "projector": {
     "visible": true,
     "color": "#ffffff",
-    "intensityIdle": 120,
+    "intensityIdle": 400,
     "intensityMax": 400,
     "presenceNote": "intensity = idle + (max-idle) * smoothed card proximity (cursor vs card rect, 1.5u margin, lerp 0.05)",
     "distance": 0,
@@ -1194,12 +1194,7 @@
   },
   "sceneGuiMapping": {
     "description": "Maps lil-gui controls in scene-gui.js to JSON paths",
-    "skyEnvironment": {
-      "bg blurriness": "scene.backgroundBlurriness",
-      "bg intensity": "scene.backgroundIntensity",
-      "bg rotation": "scene.backgroundRotation.y",
-      "_removed": "env intensity/rotation rows dropped 2026-07-03 (env lighting off); ink-warp rows and God-rays folder dropped too"
-    },
+    "_pruned": "big prune 2026-07-03 (hard to find sliders): folders REMOVED — Sky/environment (dome disabled), Ambient + Side light (off), Tilt-shift (disabled), Camera, Cursor energy, Fluid ink, Fluid distortion; rows REMOVED — floor height/offsets/tilt/reflectivity/fog near+far/fade radius, atmosphere L1-gates-L2 / energy detail gain / fog ink / light breathing / wind x+y / glow energy gain / glow mouse shift, projector cone/penumbra/distance/cursor travel. All still live via baked defaults; restore rows from git. Remaining folders: Reflective floor, Director, Atmosphere, Fog veil, Projector, Post, Cubes.",
     "reflectiveFloor": {
       "visible": "reflectiveFloor.visible",
       "height (y)": "reflectiveFloor.transform.position[1]",
@@ -1284,8 +1279,8 @@
         0.01
       ],
       "uGlowRadius": 0.96,
-      "uGlowStretch": 0.95,
-      "glowIntensity": 0.98
+      "uGlowStretch": 0.85,
+      "glowIntensity": 2.05
     },
     "wind": [
       0.016,
@@ -1300,14 +1295,14 @@
   "fogVeil": {
     "note": "Foreground haze (fog-veil.js) composited OVER card/floor/backdrop (renderOrder 20) — seats the card, fogs the ground junction. Consumes the medium by reference; nearest layer rides the wind fastest (x2.2) with its own domain offset. Also draws into the Reflector's mirror pass (desired).",
     "uniforms": {
-      "uVeilScale": 2.85,
-      "uVeilSpeed": 0.051,
-      "uBottomStart": 0.52,
-      "uBottomMax": 1.0,
-      "uEdgeWidth": 0.225,
+      "uVeilScale": 4.0,
+      "uVeilSpeed": 0.059,
+      "uBottomStart": 0.0,
+      "uBottomMax": 0.0,
+      "uEdgeWidth": 0.35,
       "uEdgeMax": 1.0,
-      "uNoiseFloor": 0.29,
-      "uLightResponse": 0.18
+      "uNoiseFloor": 0.25,
+      "uLightResponse": 0.88
     }
   }
 }

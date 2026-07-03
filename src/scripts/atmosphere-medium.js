@@ -28,12 +28,13 @@ export function initAtmosphereMedium({ palette } = {}) {
     uFog:   { value: new THREE.Color(palette.fog) },
     uGlow:  { value: new THREE.Color(palette.glow) },
     uSmoke: { value: new THREE.Color(palette.smoke) },
-    // light kernel (aspect-corrected centered space) — tuned 2026-07-03: light hugs the
-    // right edge (x 1.08), tall column (sun-behind-fog, ref orange env)
-    uGlowPos:       { value: new THREE.Vector2(1.08, 0.01) },
+    // light kernel (aspect-corrected centered space) — tuned 2026-07-03: kernel center
+    // pushed off-frame right and low (1.46, -0.32) so only the hot skirt enters the frame;
+    // intensity 2.05 keeps the column blazing (sun-behind-fog, ref orange env)
+    uGlowPos:       { value: new THREE.Vector2(1.46, -0.32) },
     uGlowRadius:    { value: 0.96 },
-    uGlowStretch:   { value: 0.95 },
-    uGlowIntensity: { value: 0.98 }, // written each frame from params (breathing)
+    uGlowStretch:   { value: 0.85 },
+    uGlowIntensity: { value: 2.05 }, // written each frame from params (breathing)
     // one wind direction for the whole world (p-units / second)
     uWind: { value: new THREE.Vector2(0.016, -0.004) },
     // clocks / cursor — written once per frame in update()
@@ -43,7 +44,7 @@ export function initAtmosphereMedium({ palette } = {}) {
   };
 
   const params = {
-    glowIntensity: 0.98,  // rest intensity — GUI targets this, breathing modulates around it
+    glowIntensity: 2.05,  // rest intensity — GUI targets this, breathing modulates around it
     breatheAmt:    0.135, // ±fraction of glow intensity (life pack)
   };
 
