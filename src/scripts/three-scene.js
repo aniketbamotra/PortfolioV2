@@ -64,7 +64,7 @@ let _grade = null;       // final split-tone grade — one hue axis across the w
 let _mistFront = null;   // foreground fog drifting in front of the card
 let _projector = null;   // cursor-driven spotlight projecting the cover image onto the card
 let _medium    = null;   // shared atmospheric medium — colors/light/wind/clocks, one transition()
-let _atmo      = null;   // screen-space backdrop (absorption/scattering cloudscape)
+let _atmo      = null;   // world-space sky dome (absorption/scattering cloudscape)
 let _veil      = null;   // foreground fog veil — haze over card/floor, seats everything
 let _sideLight = null;   // real PointLight keying the card to the atmosphere's glow region
 let _ambient   = null;   // AmbientLight — off by default (tuned 2026-07-02); GUI can re-enable
@@ -74,7 +74,7 @@ let _ambient   = null;   // AmbientLight — off by default (tuned 2026-07-02); 
 let _energy = 0;
 let _prevEnergyT = 0;
 const _prevPointer = new THREE.Vector2();
-const _atmoParams = { energyGain: 0.08, energyTau: 1.4, skyFollowX: 0.15, skyFollowY: 0.3 };
+const _atmoParams = { energyGain: 0.08, energyTau: 1.4 };
 
 // Per-project environment accent (drives ground/clouds/haze/glow tint).
 const _accentFor = (idx) => ORBIT_PROJECTS[idx]?.envAccent || '#7fa0ff';
@@ -146,7 +146,7 @@ const targetMouse  = new THREE.Vector2(0, 0);
 
 // Cursor bump — a bell-shaped dome that rises toward the camera under the pointer.
 const CAM_REST_Z   = 5.5;
-const _camParams   = { travelX: 1.0, travelY: 0.5, zFactor: 1.25, lerp: 0.028 };
+const _camParams   = { travelX: 1.0, travelY: 0.5, zFactor: 1.25, lerp: 0.07 };
 const BUMP_AMP     = 0.9;        // peak height (world units)
 const BUMP_RADIUS  = 1.0;        // bell radius (local face units; < REVEAL_RADIUS for a small bump)
 const BUMP_ATTACK  = 0.20;       // rise speed (per frame lerp) — quick up
@@ -343,7 +343,7 @@ export function initScene(canvas) {
   _floor = initReflectiveFloor({ scene, renderer, accent: _accentFor(0), medium: _medium });
 
   // Screen-space atmosphere — the visible backdrop, drawn first.
-  _atmo = initAtmosphere({ medium: _medium, camera, isMobile });
+  _atmo = initAtmosphere({ medium: _medium, isMobile });
   scene.add(_atmo.mesh);
 
   // Foreground fog veil — haze over everything; seats the card, fogs the floor junction.
@@ -449,8 +449,10 @@ export function initScene(canvas) {
     _camMouse.x += (targetMouse.x - _camMouse.x) * _camParams.lerp;
     _camMouse.y += (targetMouse.y - _camMouse.y) * _camParams.lerp;
     if (!prefersReduced) {
-      const cy = -_camMouse.y * _camParams.travelY;
-      camera.position.x = _camMouse.x * _camParams.travelX;
+      // Camera counter-moves the cursor on BOTH axes (cursor right → camera left) — the
+      // world appears to lean toward the cursor, and lookAt(0,0,0) pans across the dome.
+      const cy = _camMouse.y * _camParams.travelY;
+      camera.position.x = -_camMouse.x * _camParams.travelX;
       camera.position.y = cy;
       camera.position.z = CAM_REST_Z + cy * _camParams.zFactor;
       // Camera breathing (life pack) — sub-pixel drift + a hair of fov, under the parallax.
@@ -518,11 +520,9 @@ export function initScene(canvas) {
     if (_mistFront) _mistFront.update(prefersReduced ? 0 : t);
     // One medium update feeds every atmospheric layer (backdrop, veil, floor fog, card tint).
     if (_medium) _medium.update(prefersReduced ? 0 : t, prefersReduced ? 0 : _energy, mouse.x, mouse.y);
-    // Sky rides the ACTUAL camera (position incl. breathing), not the mouse — the backdrop
-    // and the world-space floor then shear together as one space instead of a painted dome.
-    // Y is NEGATED: camera up → sky pattern pans down with the floor → new sky reveals from
-    // the top edge (a camera pan), instead of sky and floor diverging (the "boat" feel).
-    if (_atmo) _atmo.update(camera.position.x * _atmoParams.skyFollowX, -camera.position.y * _atmoParams.skyFollowY);
+    // Sky is world geometry (the dome) — camera motion moves it through the projection,
+    // no manual parallax. update() only refreshes the screen-resolution uniform (ink).
+    if (_atmo) _atmo.update();
     if (_veil) _veil.update();
     if (_sideLight) _sideLight.update(prefersReduced ? 0 : _energy, mouse.x, mouse.y);
     if (_projector) _projector.update(mouse.x, mouse.y, _cardProx);

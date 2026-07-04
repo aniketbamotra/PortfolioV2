@@ -124,10 +124,10 @@ export function initSceneGui({ scene, renderer, bloomEffect, floor, projector, c
     if (medium) {
       at.add(medium.params, 'glowIntensity', 0, 3, 0.01).name('glow intensity');
     }
-    if (atmoParams?.skyFollowX !== undefined) {
-      at.add(atmoParams, 'skyFollowX', 0, 0.5, 0.005).name('sky follow x');
-      at.add(atmoParams, 'skyFollowY', 0, 0.8, 0.005).name('sky follow y');
-    }
+    at.add(u.uDomCenter.value, 'x', 0, 1, 0.005).name('dome center u');
+    at.add(u.uDomCenter.value, 'y', 0, 1, 0.005).name('dome center v');
+    at.add(u.uDomScale.value, 'x', -16, 16, 0.05).name('dome scale u');
+    at.add(u.uDomScale.value, 'y', -8, 8, 0.05).name('dome scale v');
     at.add(u.uSwirl, 'value', 0, 2, 0.01).name('swirl amount');
     at.add(u.uSwirlScale, 'value', 0.2, 3, 0.05).name('swirl scale');
     at.add(u.uSwirlSpeed, 'value', 0, 0.1, 0.001).name('swirl speed');

@@ -290,7 +290,7 @@
     }
   },
   "atmosphere": {
-    "mirrorFix": "uFlipX — backdrop is a clip-space quad, identical in any camera; onBeforeRender sets uFlipX=1 for non-main cameras so the floor Reflector's x-mirrored projective sampling cancels (glow reflects on its own side).",
+    "domeArchitecture": "2026-07-04: backdrop moved from a clip-space screen quad to a WORLD-SPACE sky dome matching the reference (brainstron/ref-skyDome.ms): IcosahedronGeometry r=300 detail=10, BackSide, center sunk y=-12.65 (horizon ring below eye level), rotated -72° about Y (UV seam behind the visible window). Fragment domain maps dome UV → the old p-units via uDomCenter/uDomScale (both scales NEGATIVE — three's polyhedron UV axes run opposite to screen), so all tuned kernel/cloud values carried over. Sky and floor now share one projection: camera motion moves them as one world; the Reflector mirrors the dome correctly. RETIRED: uFlipX mirror hack, uParallax/uAspect, skyFollowX/Y gains. Unlike the reference (lit MeshStandardMaterial + dome spin 5e-5), ours stays an UNLIT ShaderMaterial (light modeled via the shared kernel) and does NOT spin (geometry spin would drag the UV-anchored light kernel; wind supplies drift). Cursor-ink fog lookup is now gl_FragCoord/uResolution (screen effect).",
     "note": "Screen-space backdrop (atmosphere.js) — absorption/scattering cloudscape. Three wind-advected noise layers (depth parallax x1/x0.6/x1.6); transmittance = exp(-density*uAbsorb). Cinematic pass 2026-07-03: TWO-LOBE light kernel (broad skirt + tight hot core uCoreSize/uCoreBoost — sun-behind-fog column at the frame edge); temperature ramp along light intensity (uSmoke → uGlow → uHotColor, one hue axis) drives scatter/halo/core colors; CEILING LID (uLidDensity/uLidStart, screen-space, l1-modulated) — dark top band comes from smoke OCCLUDING the lit medium; lifted uBackdropFloor — 'dark' is dim rust, never black (the medium is the light fixture). Colors/kernel/wind/clocks adopted from atmosphereMedium by reference.",
     "mobileDefine": "MOBILE — fbm3 everywhere, layer 3 skipped (isMobile = width < 768)",
     "cursorEnergy": {
@@ -339,7 +339,9 @@
       "uPocketIntensity": 0.32,
       "uSwirl": 0.6,
       "uSwirlScale": 0.9,
-      "uSwirlSpeed": 0.02
+      "uSwirlSpeed": 0.02,
+      "uDomCenter": [0.45, 0.487],
+      "uDomScale": [-7.45, -3.27]
     },
     "swirlNote": "angular domain swirl (desktop only, skipped under MOBILE): sampling domain rotates by a breathing angle FIELD (fbm) → smoke curls/folds locally instead of panning in formation; plus evolution clock ev raised 0.006→0.025 and layer 2 counter-drifts against the wind (crossing layers kill the 'globe texture' read); the light kernel reads the unrotated domain",
     "skyFollowNote": "backdrop parallax rides the ACTUAL camera position (incl. breathing): skyFollowX 0.15, skyFollowY 0.3 with Y NEGATED (camera up → sky pans down with the floor → new sky reveals from the top, camera-pan feel instead of 'boat'); the ceiling lid y also rides the parallax so the smoke ceiling pans with the sky, not the frame",

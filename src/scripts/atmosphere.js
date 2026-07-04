@@ -1,19 +1,26 @@
-// Layered screen-space atmosphere — the visible backdrop (replaces the sky dome).
-// A fullscreen clip-space plane pinned to the far plane. The fragment builds a cloudscape
-// from three noise layers (à la the reference's uShader1/2/3), advected by the SHARED wind
-// and colored by an absorption/scattering assembly:
+// Layered atmosphere on a WORLD-SPACE sky dome (matches the reference's architecture:
+// IcosahedronGeometry r=300 detail=10, BackSide, dome center sunk 12.65 units below the
+// floor, rotated -72° about Y — constants lifted from the reference's Object3D dump in
+// brainstron/ref-skyDome.ms). Because the dome is real geometry seen through the scene
+// camera, sky and floor share one projection: camera motion moves them as one world, and
+// the floor's Reflector mirrors the dome correctly with no flip hacks or parallax gains.
+// The fragment builds a cloudscape from three noise layers in a 2D domain mapped from the
+// dome's spherical UVs (uDomCenter/uDomScale convert UV → the same p-units all the tuned
+// kernel/cloud values were authored in), advected by the SHARED wind and colored by an
+// absorption/scattering assembly:
 //   transmittance = exp(-density × absorb)   (Beer-Lambert through the fog mass)
 //   backdrop  = base sky seen through the mass, energized ONLY by the light kernel
 //   in-scatter = fog color × light × (1 − transmittance)
 //   core       = hot near-white where dense fog meets the light
 // Darkness away from the light falls out of the math — no mood multipliers.
+// NOTE: unlike the reference (lit MeshStandardMaterial), this stays an UNLIT ShaderMaterial —
+// we model the light explicitly via the shared kernel, and the dome does NOT spin (spinning
+// the geometry would drag our UV-anchored light kernel with it; wind supplies the drift).
 // All palette colors, the light kernel, wind and clocks come from the shared atmospheric
 // medium (atmosphere-medium.js) BY REFERENCE — one medium.transition() recolors this layer
 // together with the veil, floor fog, and card tint.
-// Because gl_Position is clip-space, the Reflector's mirror pass renders this identically —
-// the floor's "reflected sky" comes free.
 // Exports: initAtmosphere({ medium, isMobile }) →
-//          { mesh, material, update(parX, parY), setInk(uniform), destroy() }
+//          { mesh, material, update(), setInk(uniform), destroy() }
 
 import * as THREE from 'three';
 import { NOISE_GLSL } from './shaders/noise-glsl.js';
@@ -32,14 +39,14 @@ export const DEFAULT_ATMO = {
 const ATMO_VERT = /* glsl */`
   varying vec2 vUv;
   void main(){
-    vUv = position.xy * 0.5 + 0.5;
-    // Clip-space passthrough pinned to the far plane — always behind everything.
-    gl_Position = vec4(position.xy, 1.0, 1.0);
+    vUv = uv; // the icosphere's spherical unwrap — the cloud domain lives in UV space
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }`;
 
 const ATMO_FRAG = /* glsl */`
-  uniform float uTime, uAspect, uEnergy;
-  uniform vec2  uMouse, uParallax, uWind;
+  uniform float uTime, uEnergy;
+  uniform vec2  uMouse, uWind;
+  uniform vec2  uDomCenter, uDomScale, uResolution;
   uniform vec3  uBase, uFog, uGlow, uSmoke, uAmbient;
   uniform float uL1Alpha, uL1Speed, uL1Scale;
   uniform float uL2Alpha, uL2Scale;
@@ -55,7 +62,6 @@ const ATMO_FRAG = /* glsl */`
   uniform float uGlowIntensity, uGlowEnergyGain, uGlowRadius, uGlowStretch, uGlowMouseShift;
   uniform vec2  uGlowPos;
   uniform sampler2D uInk;
-  uniform float uFlipX;
   varying vec2  vUv;
 
   ${NOISE_GLSL}
@@ -68,10 +74,9 @@ const ATMO_FRAG = /* glsl */`
   #endif
 
   void main(){
-    // Mirror pass: pre-flip x so the Reflector's mirrored projective sampling cancels
-    // (glow stays on its own side of the reflection).
-    vec2 suv = vec2(mix(vUv.x, 1.0 - vUv.x, uFlipX), vUv.y);
-    vec2 p = (suv - 0.5) * vec2(uAspect, 1.0) + uParallax;
+    // Dome UV → p-space: the same units every kernel/cloud value was tuned in (at the rest
+    // camera, the visible UV window maps to the old screen extents ±0.89 × ±0.5).
+    vec2 p = (vUv - uDomCenter) * uDomScale;
 
     // ── Shared light kernel, two lobes (ref: sun-behind-fog column at the frame edge) ──
     // broad soft skirt carries illumination across most of the frame; a tight hot core
@@ -128,12 +133,15 @@ const ATMO_FRAG = /* glsl */`
       float l3 = FBM(pa3 * uL3Scale + q * 0.8 + vec2(-t3, t3 * 0.6));
     #endif
 
-    float ink = texture2D(uInk, suv).b;
-    // Ceiling lid — smoke pools at the top of the frame (screen-space, parallax-free), so
-    // the dark upper band comes from OCCLUSION of the lit medium, not absence of light.
-    // Modulated by layer 1 so the lid keeps plume structure instead of a flat gradient.
-    // (lid y rides the parallax so the smoke ceiling pans with the sky, not with the frame)
-    float lid = smoothstep(uLidStart, 1.0, vUv.y - uParallax.y) * uLidDensity * (0.45 + 0.75 * l1);
+    // Cursor-ink fog thickening is a SCREEN effect (fluid dye lives in screen space) —
+    // sample by fragment position. Slightly off in the mirror pass (different RT size);
+    // at uInkFog 0.09 that's invisible.
+    float ink = texture2D(uInk, gl_FragCoord.xy / uResolution).b;
+    // Ceiling lid — smoke pools overhead IN THE WORLD (p-space, anchored to the dome), so
+    // the dark upper band comes from OCCLUSION of the lit medium, not absence of light,
+    // and pans correctly with the camera. Modulated by layer 1 so the lid keeps plume
+    // structure instead of a flat gradient. (p.y + 0.5 ≈ the old screen-y at rest camera.)
+    float lid = smoothstep(uLidStart, 1.0, p.y + 0.5) * uLidDensity * (0.45 + 0.75 * l1);
     float d = l1 * uL1Alpha
             + l2 * uL2Alpha * mix(1.0, l1 * 2.0, uL1Mix2)
             + l3 * uL3Alpha * (0.6 + uEnergy * uEnergyGain)
@@ -165,7 +173,7 @@ const ATMO_FRAG = /* glsl */`
     gl_FragColor = vec4(col, 1.0);
   }`;
 
-export function initAtmosphere({ medium, camera = null, isMobile = false } = {}) {
+export function initAtmosphere({ medium, isMobile = false } = {}) {
   // Flat black placeholder so uInk is never null before the fluid dye is attached
   // (mirrors the sky-dome/floor pattern). Zero ink until setInk swaps in the live texture.
   const flatInk = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1, THREE.RGBAFormat);
@@ -193,8 +201,16 @@ export function initAtmosphere({ medium, camera = null, isMobile = false } = {})
       uEnergy: medium.u.uEnergy,
       uMouse:  medium.u.uMouse,
       // ── layer-specific (owned) ──
-      uAspect:   { value: 16 / 9 },
-      uParallax: { value: new THREE.Vector2() },
+      // Dome UV → p-space mapping. At fov 55° / aspect 16:9 the rest camera sees ~86° of
+      // azimuth (0.24 of u) and ~55° of inclination (0.31 of v); scale converts that
+      // window to the old screen extents (±0.89 × ±0.5) so all tuned values carry over.
+      // Center = the UV the rest camera looks at, derived from the dome transform
+      // (sunk -12.65, rotated -72°) and three's polyhedron UV convention (u = azimuth of
+      // (z,-x), v = inclination of -y) — both axes run OPPOSITE to screen, hence negative
+      // scales. Retunable in GUI.
+      uDomCenter:  { value: new THREE.Vector2(0.45, 0.487) },
+      uDomScale:   { value: new THREE.Vector2(-7.45, -3.27) },
+      uResolution: { value: new THREE.Vector2(1920, 1080) },
       uAmbient:  { value: new THREE.Color(0xa79d99) }, // warm-neutral lit-fog tint
       // cloud layers (à la the reference's uShader1/2/3 {alpha,speed,scale}) — tuned 2026-07-03
       uL1Alpha: { value: 1.0 },  uL1Speed: { value: 0.011 }, uL1Scale: { value: 1.8 },
@@ -231,22 +247,22 @@ export function initAtmosphere({ medium, camera = null, isMobile = false } = {})
       uGlowEnergyGain: { value: 0.0 },
       uGlowMouseShift: { value: 0.03 },
       uInk: { value: flatInk }, // fluid dye — swapped in via setInk
-      uFlipX: { value: 0 },     // 1 when drawn by a mirror camera (see onBeforeRender below)
     },
   });
 
-  const geometry = new THREE.PlaneGeometry(2, 2);
+  // Reference dome constants (brainstron/ref-skyDome.ms): icosphere r=300 detail=10,
+  // BackSide (we render the inside), center sunk 12.65 below the floor so the horizon
+  // ring falls below eye level, rotated -72° about Y (art-directed UV seam placement —
+  // keeps the unwrap seam behind the visible window).
+  const geometry = new THREE.IcosahedronGeometry(300, 10);
+  material.side = THREE.BackSide;
   const mesh = new THREE.Mesh(geometry, material);
+  mesh.position.y = -12.65;
+  mesh.rotation.y = -Math.PI * 0.4;
   mesh.frustumCulled = false;
   mesh.renderOrder = -1000; // draw first — everything else paints over it
-
-  // The backdrop is a clip-space quad, so it renders IDENTICALLY for any camera — but the
-  // floor Reflector samples its mirror pass with x-mirrored projective UVs (mirror handedness),
-  // which would land the glow on the wrong side of the reflection. Render x-flipped for any
-  // camera that isn't the main one so the mirror's flip cancels out.
-  mesh.onBeforeRender = (renderer, scene, cam) => {
-    material.uniforms.uFlipX.value = (camera && cam !== camera) ? 1 : 0;
-  };
+  // Real world geometry: the floor's Reflector mirrors it with correct perspective — no
+  // flip hacks, no parallax gains. Camera motion moves sky and floor as one world.
 
   const u = material.uniforms;
 
@@ -255,9 +271,8 @@ export function initAtmosphere({ medium, camera = null, isMobile = false } = {})
     material,
 
     // Time/energy/mouse/colors arrive via the shared medium — only view-local state here.
-    update(parX, parY) {
-      u.uParallax.value.set(parX, parY);
-      u.uAspect.value = window.innerWidth / window.innerHeight;
+    update() {
+      u.uResolution.value.set(window.innerWidth * devicePixelRatio, window.innerHeight * devicePixelRatio);
     },
 
     setInk(uniform) { material.uniforms.uInk = uniform; }, // adopt the live { value } dye object
