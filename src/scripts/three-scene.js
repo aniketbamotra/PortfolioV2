@@ -100,6 +100,9 @@ const _m4 = new THREE.Matrix4();
 const _v3 = new THREE.Vector3();
 const _sv = new THREE.Vector3();
 const _qI = new THREE.Quaternion();
+// Scratch for placing a wall's (scene-child) projector in world space each frame.
+const _pjPos = new THREE.Vector3(), _pjN = new THREE.Vector3(), _pjR = new THREE.Vector3(), _pjU = new THREE.Vector3();
+const PROJ_DIST = 3.25, PROJ_TRAVEL = 1.0; // lamp stand-off from the face · cursor travel range
 // (cursor-torch scratch removed — using _hit / _cursor directly)
 
 // ── Image reconstruction (the cubes ARE the image, C2: per-cube texture window) ─
@@ -132,6 +135,22 @@ const _planeN = new THREE.Vector3();
 const _hit = new THREE.Vector3();
 
 let currentIdx     = 0;
+// Wall pool (Model 1): up to 3 live walls keyed by ring slot index {active-1, active, active+1}.
+// _activeWall is the one the camera faces; its fields are mirrored into the singletons above.
+const _pool        = new Map(); // slotIndex → wall
+let _activeWall    = null;
+// Fixed pool of 3 projectors, kept in the scene for the app's lifetime so the light count is
+// CONSTANT (adding/removing a light recompiles every lit material → the transition hitch). The
+// 3 live walls sit at consecutive ring slots, so slotIndex mod 3 assigns each a distinct lamp;
+// the disposed wall and the incoming far wall share a slot mod 3, so exactly 3 lamps recycle.
+let _projPool      = [];
+// Walls are CACHED by project index and repositioned when reused (never disposed on navigation).
+// Each wall keeps its own compiled shader program, so a project's shader compiles once (first
+// visit) and is reused forever after — no per-turn recompile hitch. _building dedupes the
+// concurrent first-visit builds of the same project.
+const _wallCache   = new Map(); // projectIdx → wall
+const _building    = new Map(); // projectIdx → Promise<wall> (in-flight first build)
+const _wallProjector = (wall) => _projPool[((wall.slotIndex % 3) + 3) % 3];
 let isTransitioning = false;
 let isActive       = true;
 let prefersReduced = false;
@@ -147,40 +166,48 @@ const targetMouse  = new THREE.Vector2(0, 0);
 // Cursor bump — a bell-shaped dome that rises toward the camera under the pointer.
 const CAM_REST_Z   = 5.5;
 const _camParams   = { travelX: 1.0, travelY: 0.5, zFactor: 1.25, lerp: 0.07 };
+
+// ── Camera yaw (Model 1: project switch = camera turns to face the next wall) ──
+// The camera sits at a FIXED seat (0,0,CAM_REST_Z) and yaws in place; the walls live on a
+// ring around that seat, CAM_REST_Z in front, each RING_STEP apart. Because a neighbour is a
+// full RING_STEP off the view axis, it falls outside the frustum and stays hidden at the
+// edges (the whole reason the pivot is AT the camera, not behind the wall). At azimuth 0 the
+// active wall sits at the world origin — framing identical to before.
+const RING_STEP   = THREE.MathUtils.degToRad(80); // camera turn per project switch (~80°)
+const CAM_PIVOT   = new THREE.Vector3(0, 0, CAM_REST_Z); // fixed camera seat; it yaws in place
+let _camAzimuth   = 0;   // accumulating yaw angle (radians); gsap tweens this on switch
+const _wallCenter = new THREE.Vector3(); // scratch: active wall centre (lookAt target)
+const _viewFwd    = new THREE.Vector3(); // scratch: camera view direction at current yaw
+const _camRight   = new THREE.Vector3(); // scratch: camera-local right (for parallax)
+
+// World transform of a wall at ring angle θ: CAM_REST_Z in front of the camera seat along
+// view yaw θ, facing back toward the seat. Writes into outPos; returns rotation.y.
+function _ringSlot(theta, outPos) {
+  outPos.set(-CAM_REST_Z * Math.sin(theta), 0, CAM_REST_Z * (1 - Math.cos(theta)));
+  return theta; // +Z face rotated by θ about Y = (sinθ,0,cosθ) → points back at the seat
+}
 const BUMP_AMP     = 0.9;        // peak height (world units)
 const BUMP_RADIUS  = 1.0;        // bell radius (local face units; < REVEAL_RADIUS for a small bump)
 const BUMP_ATTACK  = 0.20;       // rise speed (per frame lerp) — quick up
 const BUMP_RELEASE = 0.03;       // fall speed (per frame lerp) — slow down/settle
 
 const LIGHTING_PRESETS = [
-  // 0 — DLS — cool blue-violet tint
+  // 0 — Keploy — warm rust
   {
     ambient: 0x1a2238, ambientInt: 0.5,
     spot: 0xdfe6ff, spotInt: 30, spotPos: [ 2, 4, 4],
     fog: 0x04040c, fogDensity: 0.007, // matches atmo.base — scene fog never fights the backdrop
   },
-  // 1 — Particles — electric blue
-  {
-    ambient: 0x05050f, ambientInt: 0.40,
-    spot: 0xaabbff, spotInt: 46, spotPos: [-2, 4, 4],
-    fog: 0x030310, fogDensity: 0.010,
-  },
-  // 2 — Brand — warm emerald
+  // 1 — GEMx — emerald
   {
     ambient: 0x040a05, ambientInt: 0.40,
     spot: 0x55ddaa, spotInt: 44, spotPos: [ 1, 5, 4],
     fog: 0x020806, fogDensity: 0.008,
   },
-  // 3 — Analytics — deep navy
-  {
-    ambient: 0x020408, ambientInt: 0.40,
-    spot: 0x5577cc, spotInt: 48, spotPos: [ 3, 4, 4],
-    fog: 0x020409, fogDensity: 0.011,
-  },
-  // 4 — Experiments — warm amber
+  // 2 — Demand Climate Justice — warm paper
   {
     ambient: 0x0a0600, ambientInt: 0.40,
-    spot: 0xffaa44, spotInt: 48, spotPos: [ 2, 3, 5],
+    spot: 0xe8b98a, spotInt: 44, spotPos: [ 2, 3, 5],
     fog: 0x0a0501, fogDensity: 0.008,
   },
 ];
@@ -365,11 +392,15 @@ export function initScene(canvas) {
     scene.add(_mistFront.mesh);
   }
 
-  // Cursor-driven projector — casts the cover image onto the card (reverse parallax).
-  _projector = initProjector({ scene });
-  _projector.setImage(ORBIT_PROJECTS[currentIdx]?.coverImage || null);
-  _projector.transition(_atmoFor(currentIdx).glow, { duration: 0 }); // palette tint from frame 1
-  // (grade tints are static/GUI-owned — per-project color arrives via medium.transition)
+  // Fixed pool of 3 projectors (see _projPool note). Created once, never destroyed until the
+  // scene is — so the light count stays constant. Each live wall is assigned one by slot mod 3;
+  // a shown wall attaches + lights its lamp, the active wall's lamp also tracks the cursor.
+  // A 1×1 placeholder map is set on every lamp so NUM_SPOT_LIGHT_MAPS is a constant 3 from the
+  // start — swapping to a real cover later then never changes that shader define (no recompile).
+  const _placeholderMap = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1, THREE.RGBAFormat);
+  _placeholderMap.needsUpdate = true;
+  _projPool = [initProjector({ scene }), initProjector({ scene }), initProjector({ scene })];
+  _projPool.forEach((p) => { p.light.map = _placeholderMap; p.setIntensity(0); });
 
   // Cursor velocity → flowmap texture (card-face UV space, 128² HalfFloat RT).
   // Sampled in the cube fragment shader to distort image UVs — image "pours" on cursor drag.
@@ -400,7 +431,7 @@ export function initScene(canvas) {
     });
   }
 
-  _buildVoxelCard(); // async — fetches cube_positions.json then builds the InstancedMesh
+  _initPool(); // async — builds the active wall at slot 0 + prefetches its two neighbours
 
   // Mouse
   _handlers.mousemove = (e) => {
@@ -422,16 +453,16 @@ export function initScene(canvas) {
     const now = performance.now();
     if (now - lastScroll < 900) return;
     lastScroll = now;
-    if (e.deltaY > 1)       setProject((currentIdx + 1) % ORBIT_PROJECTS.length);
-    else if (e.deltaY < -1) setProject((currentIdx - 1 + ORBIT_PROJECTS.length) % ORBIT_PROJECTS.length);
+    if (e.deltaY > 1)       navigate(-1);
+    else if (e.deltaY < -1) navigate(1);
   };
   window.addEventListener('wheel', _handlers.wheel, { passive: false });
   _handlers._canvas = canvas;
 
   // Keyboard — project navigation
   _handlers.keydown = (e) => {
-    if (e.key === 'ArrowDown'  || e.key === 'ArrowRight') setProject((currentIdx + 1) % ORBIT_PROJECTS.length);
-    if (e.key === 'ArrowUp'    || e.key === 'ArrowLeft')  setProject((currentIdx - 1 + ORBIT_PROJECTS.length) % ORBIT_PROJECTS.length);
+    if (e.key === 'ArrowDown'  || e.key === 'ArrowRight') navigate(-1);
+    if (e.key === 'ArrowUp'    || e.key === 'ArrowLeft')  navigate(1);
   };
   window.addEventListener('keydown', _handlers.keydown);
 
@@ -448,25 +479,41 @@ export function initScene(canvas) {
 
     _camMouse.x += (targetMouse.x - _camMouse.x) * _camParams.lerp;
     _camMouse.y += (targetMouse.y - _camMouse.y) * _camParams.lerp;
+    // Yaw basis at the current azimuth: view forward and camera-local right. At azimuth 0
+    // these are -Z and +X, so the parallax/breathing below reduce exactly to the pre-yaw
+    // world-axis math (wall at origin, camera at (0,0,CAM_REST_Z)).
+    const th = _camAzimuth;
+    _viewFwd.set(-Math.sin(th), 0, -Math.cos(th));  // camera looks along here
+    _camRight.set(Math.cos(th), 0, -Math.sin(th));  // camera-local +X
+    _ringSlot(th, _wallCenter);                     // active wall centre (lookAt target)
+    camera.position.copy(CAM_PIVOT);                // fixed seat; camera yaws in place
     if (!prefersReduced) {
-      // Camera counter-moves the cursor on BOTH axes (cursor right → camera left) — the
-      // world appears to lean toward the cursor, and lookAt(0,0,0) pans across the dome.
+      // Parallax in camera-local axes (was world XYZ) so it stays consistent as we yaw:
+      // cursor right → camera left; cursor up → camera up + dolly back (away from the wall).
       const cy = _camMouse.y * _camParams.travelY;
-      camera.position.x = -_camMouse.x * _camParams.travelX;
-      camera.position.y = cy;
-      camera.position.z = CAM_REST_Z + cy * _camParams.zFactor;
+      camera.position.addScaledVector(_camRight, -_camMouse.x * _camParams.travelX);
+      camera.position.addScaledVector(THREE.Object3D.DEFAULT_UP, cy);
+      camera.position.addScaledVector(_viewFwd, -cy * _camParams.zFactor);
       // Camera breathing (life pack) — sub-pixel drift + a hair of fov, under the parallax.
-      camera.position.x += Math.sin(t * (Math.PI * 2 / 9.2)) * 0.02;
-      camera.position.y += Math.sin(t * (Math.PI * 2 / 12.7) + 1.7) * 0.015;
+      camera.position.addScaledVector(_camRight, Math.sin(t * (Math.PI * 2 / 9.2)) * 0.02);
+      camera.position.addScaledVector(THREE.Object3D.DEFAULT_UP, Math.sin(t * (Math.PI * 2 / 12.7) + 1.7) * 0.015);
       camera.fov = 55 + Math.sin(t * (Math.PI * 2 / 11.0)) * 0.15;
       camera.updateProjectionMatrix();
     }
-    camera.lookAt(0, 0, 0);
+    camera.lookAt(_wallCenter);
 
-    if (cardGroup && !prefersReduced) {
-      if (_wobble) _wobble.update(t);   // 3D Perlin float — mutates cardGroup.position in place
-      cardGroup.rotation.y = mouse.x * 0.14;
-      cardGroup.rotation.x = mouse.y * 0.07;
+    if (!prefersReduced) {
+      // Apply the wobble + mouse tilt to EVERY visible wall (active + the incoming one mid-turn),
+      // not just the active one — otherwise the incoming wall (sitting at plain yaw θ) would snap
+      // by mouse.x*0.14 the instant it becomes active on settle (the cursor-dependent perspective
+      // jump). Tilt rides on top of each wall's fixed ring yaw so it stays face-outward.
+      for (const w of _pool.values()) {
+        if (!w.group.visible) continue;
+        if (w.wobble) w.wobble.update(t);
+        w.group.rotation.y = w.theta + mouse.x * 0.14;
+        w.group.rotation.x = mouse.y * 0.07;
+        _placeProjector(w, w === _activeWall); // keep each lit wall's lamp in front of its face
+      }
     }
 
     // Flowmap: paint cursor velocity into a texture (card-face UV space).
@@ -512,7 +559,9 @@ export function initScene(canvas) {
     }
 
     _updateReveal();
-    if (_revealU) _revealU.uTime.value = prefersReduced ? 0 : t;
+    // Advance the shader clock on every live wall (neighbours idle via uTime; active adds reveal).
+    const _wt = prefersReduced ? 0 : t;
+    for (const w of _pool.values()) if (w.cubeU) w.cubeU.uTime.value = _wt;
     if (_env) _env.update(prefersReduced ? 0 : t);
     if (_cloud) _cloud.update(prefersReduced ? 0 : t);
     if (_sky) _sky.update(prefersReduced ? 0 : t);
@@ -525,7 +574,7 @@ export function initScene(canvas) {
     if (_atmo) _atmo.update();
     if (_veil) _veil.update();
     if (_sideLight) _sideLight.update(prefersReduced ? 0 : _energy, mouse.x, mouse.y);
-    if (_projector) _projector.update(mouse.x, mouse.y, _cardProx);
+    // (projectors are placed per visible wall in the tilt loop above — no single-lamp update)
     if (_gui && _revealU) _gui.addCubeControls(_revealU); // idempotent — attaches once shader is live
 
     composer.render();
@@ -535,169 +584,244 @@ export function initScene(canvas) {
 
 // ── Voxel card construction ─────────────────────────────────────────────────
 
-async function _buildVoxelCard() {
-  let data;
-  try {
-    data = await (await fetch('/assets/cube_positions.json')).json();
-  } catch (err) {
-    console.error('[scene] cube_positions.json load failed:', err);
-    return;
-  }
-  const N = data.length;
+// Fetch + compute the geometry that is IDENTICAL for every wall (cube layout, per-column /
+// per-run randoms, face dims). Cached once; each wall only adds its own cover-derived data.
+let _wallSeq = 0; // monotonic wall id → unique shader program cache key per wall
+let _baseGeoPromise = null;
+function _loadBaseGeo() {
+  if (_baseGeoPromise) return _baseGeoPromise;
+  _baseGeoPromise = (async () => {
+    const data = await (await fetch('/assets/cube_positions.json')).json();
+    const N = data.length;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const c of data) {
+      if (c.x < minX) minX = c.x; if (c.x > maxX) maxX = c.x;
+      if (c.y < minY) minY = c.y; if (c.y > maxY) maxY = c.y;
+      if (c.z < minZ) minZ = c.z; if (c.z > maxZ) maxZ = c.z;
+    }
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2, cz = (minZ + maxZ) / 2;
+    const spanX = maxX - minX, spanY = maxY - minY, spanZ = maxZ - minZ;
+    const S = 4.0 / Math.max(spanX, spanY, spanZ);
+    // json x → world X (width), json z → world Y (height), json y → world Z (depth).
+    const wHalfX = (spanX * S) / 2, wHalfY = (spanZ * S) / 2, wHalfZ = (spanY * S) / 2;
+    const cube = ((spanX * S) / 40) * 0.92;
+    const pos = new Float32Array(N * 3);       // base world pos (wx, wy, wz) — pre depth-relief
+    const uv  = new Float32Array(N * 2);        // face UV (u, v) per cube
+    const grid = new Int16Array(N * 2);         // grid cell (gx, gz)
+    const colRand = new Float32Array(N), runRand = new Float32Array(N);
+    const depthNorm = new Float32Array(N), hashArr = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      const c = data[i];
+      const wx = (c.x - cx) * S, wy = (c.z - cz) * S, wz = (c.y - cy) * S;
+      const h  = _hash(c.x, c.y, c.z);
+      const u = (wx + wHalfX) / (2 * wHalfX), v = (wy + wHalfY) / (2 * wHalfY);
+      const gx = Math.min(GRID_COLS - 1, Math.floor(u * GRID_COLS));
+      const gz = Math.min(GRID_ROWS - 1, Math.floor(v * GRID_ROWS));
+      pos[i * 3] = wx; pos[i * 3 + 1] = wy; pos[i * 3 + 2] = wz;
+      uv[i * 2] = u; uv[i * 2 + 1] = v;
+      grid[i * 2] = gx; grid[i * 2 + 1] = gz;
+      colRand[i] = _hash(gx, gz, 0);
+      runRand[i] = _hash(Math.floor(gx / 3), gz, 7);
+      depthNorm[i] = (wz + wHalfZ) / (2 * wHalfZ);
+      hashArr[i] = h;
+    }
+    _halfExtent.set(wHalfX, wHalfY);
+    _cardFaceAspect = spanX / spanZ;
+    console.log(`[scene] base geo — ${N} cubes · cell ${cube.toFixed(3)}`);
+    // colRand/runRand arrays are shared read-only; each wall wraps its OWN attribute (so one
+    // wall's geometry.dispose() never frees a buffer another wall still references).
+    return { N, cube, wHalfX, wHalfY, pos, uv, grid, colRand, runRand, depthNorm, hashArr,
+             faceAspect: spanX / spanZ };
+  })();
+  return _baseGeoPromise;
+}
 
-  // Dataset bounds + midrange centre.
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
-  for (const c of data) {
-    if (c.x < minX) minX = c.x; if (c.x > maxX) maxX = c.x;
-    if (c.y < minY) minY = c.y; if (c.y > maxY) maxY = c.y;
-    if (c.z < minZ) minZ = c.z; if (c.z > maxZ) maxZ = c.z;
-  }
-  const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2, cz = (minZ + maxZ) / 2;
-  const spanX = maxX - minX, spanY = maxY - minY, spanZ = maxZ - minZ;
-  const S = 4.0 / Math.max(spanX, spanY, spanZ); // match the previous card footprint
-
-  // World remap so the readable face points at the camera:
-  // json x → world X (width), json z → world Y (height), json y → world Z (depth).
-  const wHalfX = (spanX * S) / 2;
-  const wHalfY = (spanZ * S) / 2;
-  const wHalfZ = (spanY * S) / 2; // depth half-extent (the thin 6-layer axis)
-  _halfExtent.set(wHalfX, wHalfY);
-  _cardFaceAspect = spanX / spanZ;
-  const cube = ((spanX * S) / 40) * 0.92; // 40 voxels wide → cell ≈ 0.1; 0.92 leaves a hairline
-
-  _N        = N;
-  _curPos   = new Float32Array(N * 3);
-  _scaleArr = new Float32Array(N);
-  _uvOffset = new Float32Array(N * 2);
-  _vox      = new Float32Array(N * 3); // per-cube (depthNorm, rand, lum) for D2 motion/visibility
-  _colRand  = new Float32Array(N);     // per-column random (shared across the 6 depth layers)
-  _runRand  = new Float32Array(N);     // per-run random (row-coherent dashes for the edge cull)
-  _revealArr = new Float32Array(N);    // eased per-cube reveal (starts hidden)
-  _bumpArr   = new Float32Array(N);    // eased per-cube bump height (starts flat)
-
-  // C2: each cube maps its own UV window of the shared cover texture (image fragments).
-  const cover  = ORBIT_PROJECTS[currentIdx]?.coverImage || null;
-  const sample = await _buildColorSampler(cover);          // (u,v) → {lum} for depth relief
-  const texInfo = cover ? await _loadCoverTexture(cover) : null; // {texture, aspect}
-  _coverTex = texInfo?.texture || null;
+// Build ONE self-contained wall for `idx`, seated at ring `slotIndex`. Returns a wall object
+// holding its own arrays, mesh/group, material and uniform table (cubeU). The interactive
+// systems (reveal/flowmap/projector) run only on the ACTIVE wall (see _activateWall); a
+// neighbour just idles its shader via uTime and renders its baked cover.
+async function _buildWall(idx, slotIndex) {
+  const base = await _loadBaseGeo();
+  if (!scene) return null; // destroyed mid-load
+  const { N } = base;
+  const cover   = ORBIT_PROJECTS[idx]?.coverImage || null;
+  const sample  = await _buildColorSampler(cover);
+  const texInfo = cover ? await _loadCoverTexture(cover) : null;
 
   // Cover-fit visible region (image vs face aspect) — baked into the UV windows.
   let offU = 0, offV = 0, spanU = 1, spanV = 1;
   if (texInfo) {
-    if (texInfo.aspect > _cardFaceAspect) { spanU = _cardFaceAspect / texInfo.aspect; offU = (1 - spanU) / 2; }
-    else                                  { spanV = texInfo.aspect / _cardFaceAspect; offV = (1 - spanV) / 2; }
+    if (texInfo.aspect > base.faceAspect) { spanU = base.faceAspect / texInfo.aspect; offU = (1 - spanU) / 2; }
+    else                                  { spanV = texInfo.aspect / base.faceAspect; offV = (1 - spanV) / 2; }
   }
-  _uvScale.set(spanU / GRID_COLS, spanV / GRID_ROWS);
-  _uvOrigin.set(offU, offV);
+  const uvScale  = new THREE.Vector2(spanU / GRID_COLS, spanV / GRID_ROWS);
+  const uvOrigin = new THREE.Vector2(offU, offV);
 
+  const curPos    = new Float32Array(N * 3);
+  const scaleArr  = new Float32Array(N);
+  const uvOffset  = new Float32Array(N * 2);
+  const vox       = new Float32Array(N * 3);
+  const revealArr = new Float32Array(N);
+  const bumpArr   = new Float32Array(N);
   for (let i = 0; i < N; i++) {
-    const c = data[i];
-    const wx = (c.x - cx) * S;
-    const wy = (c.z - cz) * S;
-    const wz = (c.y - cy) * S;
-    const h  = _hash(c.x, c.y, c.z);
-
-    // Face UV → luminance (for depth relief).
-    const u = (wx + wHalfX) / (2 * wHalfX);
-    const v = (wy + wHalfY) / (2 * wHalfY);
+    const wx = base.pos[i * 3], wy = base.pos[i * 3 + 1], wz = base.pos[i * 3 + 2];
+    const u = base.uv[i * 2], v = base.uv[i * 2 + 1];
+    const gx = base.grid[i * 2], gz = base.grid[i * 2 + 1];
     const px = sample(u, v);
-
-    // Per-cube texture window: this cube's grid cell → its tile of the cover.
-    const gx = Math.min(GRID_COLS - 1, Math.floor(u * GRID_COLS));
-    const gz = Math.min(GRID_ROWS - 1, Math.floor(v * GRID_ROWS));
-    _uvOffset[i * 2]     = offU + gx * (spanU / GRID_COLS);
-    _uvOffset[i * 2 + 1] = offV + gz * (spanV / GRID_ROWS);
-
-    // per-column random: hash the grid cell only (no depth) → identical for all 6 layers,
-    // so the cull removes/keeps a whole depth column together (no orphan cubes).
-    _colRand[i] = _hash(gx, gz, 0);
-    // per-run random: ~3-cell horizontal runs share one value → the edge cull removes
-    // coherent dashes along rows (ref: fringe thins into row-aligned streaks, not confetti)
-    _runRand[i] = _hash(Math.floor(gx / 3), gz, 7);
-
-    // Brightness-driven depth relief (small — preserves the Blender layout).
-    const rz = wz + (px.lum - 0.5) * DEPTH_LUM + (h - 0.5) * DEPTH_NOISE;
-    _curPos[i * 3] = wx; _curPos[i * 3 + 1] = wy; _curPos[i * 3 + 2] = rz;
-    _scaleArr[i] = 1;
-
-    // D2 per-cube data: depth layer (0 front → 1 back), random phase, luminance.
-    _vox[i * 3]     = (wz + wHalfZ) / (2 * wHalfZ);
-    _vox[i * 3 + 1] = h;
-    _vox[i * 3 + 2] = px.lum;
+    uvOffset[i * 2]     = offU + gx * (spanU / GRID_COLS);
+    uvOffset[i * 2 + 1] = offV + gz * (spanV / GRID_ROWS);
+    const rz = wz + (px.lum - 0.5) * DEPTH_LUM + (base.hashArr[i] - 0.5) * DEPTH_NOISE;
+    curPos[i * 3] = wx; curPos[i * 3 + 1] = wy; curPos[i * 3 + 2] = rz;
+    scaleArr[i] = 1;
+    vox[i * 3] = base.depthNorm[i]; vox[i * 3 + 1] = base.hashArr[i]; vox[i * 3 + 2] = px.lum;
   }
 
-  // Rounded cubes (reference: RoundedBoxGeometry radius 0.05/1.25 = 4% of the cell, 1 segment)
-  // — the rounded edges catch the side/ambient light as thin highlights.
-  const geo = new RoundedBoxGeometry(cube, cube, cube, 1, cube * 0.04);
-  geo.setAttribute('aUvOffset', new THREE.InstancedBufferAttribute(_uvOffset, 2));
-  geo.setAttribute('aVox', new THREE.InstancedBufferAttribute(_vox, 3));
-  geo.setAttribute('aColRand', new THREE.InstancedBufferAttribute(_colRand, 1));
-  geo.setAttribute('aRunRand', new THREE.InstancedBufferAttribute(_runRand, 1));
-  _revealAttr = new THREE.InstancedBufferAttribute(_revealArr, 1);
-  _revealAttr.setUsage(THREE.DynamicDrawUsage);
-  geo.setAttribute('aReveal', _revealAttr);
-  _bumpAttr = new THREE.InstancedBufferAttribute(_bumpArr, 1);
-  _bumpAttr.setUsage(THREE.DynamicDrawUsage);
-  geo.setAttribute('aBump', _bumpAttr);
+  const geo = new RoundedBoxGeometry(base.cube, base.cube, base.cube, 1, base.cube * 0.04);
+  geo.setAttribute('aUvOffset', new THREE.InstancedBufferAttribute(uvOffset, 2));
+  geo.setAttribute('aVox', new THREE.InstancedBufferAttribute(vox, 3));
+  geo.setAttribute('aColRand', new THREE.InstancedBufferAttribute(base.colRand, 1));
+  geo.setAttribute('aRunRand', new THREE.InstancedBufferAttribute(base.runRand, 1));
+  const revealAttr = new THREE.InstancedBufferAttribute(revealArr, 1);
+  revealAttr.setUsage(THREE.DynamicDrawUsage);
+  geo.setAttribute('aReveal', revealAttr);
+  const bumpAttr = new THREE.InstancedBufferAttribute(bumpArr, 1);
+  bumpAttr.setUsage(THREE.DynamicDrawUsage);
+  geo.setAttribute('aBump', bumpAttr);
 
-  voxelMesh = new THREE.InstancedMesh(geo, _makeCubeMaterial(), N);
-  voxelMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  voxelMesh.frustumCulled = false;
-  voxelMesh.renderOrder = 10; // depthTest off → explicit paint order over floor/atmosphere
-  _writeAllMatrices();
+  const wall = {
+    uid: _wallSeq++,
+    idx, slotIndex, theta: slotIndex * RING_STEP,
+    curPos, scaleArr, uvOffset, vox, revealArr, revealAttr, bumpArr, bumpAttr,
+    uvScale, uvOrigin, coverTex: texInfo?.texture || null, N,
+    cubeU: null, mesh: null, group: null, wobble: null,
+  };
+  const material = _makeCubeMaterial(wall);
+  const mesh = new THREE.InstancedMesh(geo, material, N);
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  mesh.frustumCulled = false;
+  mesh.renderOrder = 10;
+  wall.mesh = mesh;
+  _writeMatrices(wall);
 
-  cardGroup = new THREE.Group();
-  cardGroup.position.set(0, 0, 0);
-  cardGroup.add(voxelMesh);
-  scene.add(cardGroup);
+  const group = new THREE.Group();
+  _ringSlot(wall.theta, group.position);
+  group.rotation.y = wall.theta; // face radially outward
+  group.add(mesh);
+  scene.add(group);
+  wall.group = group;
 
-  // Wobble: 3D Perlin float — takes cardGroup.position by reference and lerps it per frame.
-  _wobble = new Wobble(cardGroup.position); // origin auto-copied from current position
-  _wobble.frequency.set(0.28, 0.20, 0.14); // slow, aperiodic drift
-  _wobble.amplitude.set(0.06, 0.09, 0.025); // subtle range; Z barely moves (camera is close)
-  _wobble.lerpSpeed = 0.018;
+  // Wobble oscillates the wall around its ring seat (origin auto-copied from group.position).
+  const wob = new Wobble(group.position);
+  wob.frequency.set(0.28, 0.20, 0.14);
+  wob.amplitude.set(0.06, 0.09, 0.025);
+  wob.lerpSpeed = 0.018;
+  wall.wobble = wob;
 
-  console.log(`[scene] voxel card — ${N} cubes · cell ${cube.toFixed(3)}`);
+  // Pre-warm this wall's shader NOW (build time, off the critical path) so it doesn't compile
+  // the first time it's shown — that compile is the ~140ms hitch at turn start. The light count
+  // is constant (fixed projector pool), so the compiled program stays valid. compile() is sync
+  // and needs the object visible to include it; it renders nothing, so no flash.
+  group.visible = true;
+  renderer.compile(scene, camera);
+  group.visible = false; // neighbours stay hidden until a turn reveals them (see navigate)
+
+  return wall;
 }
 
-// C2 cube material: unlit, maps the shared cover via a per-cube UV window, with the
-// cursor-reveal grade + alphaHash dissolve patched into the shader.
-function _makeCubeMaterial() {
-  // Cloud material: transparent with depthWrite OFF so cubes never depth-reject each
-  // other (no vanishing). At rest the scattered cubes overlap into a soft haze; the
-  // cursor lens collapses them back to the flat grid → crisp. NormalBlending = glassy
-  // haze (swap to AdditiveBlending for a glowing core).
-  // Reference cube material (brainstron/reference_vals.md): mid-gray so the projected image
-  // reads bright on the cubes, fully rough, real IBL contribution, no depth testing (paint
-  // order handled by renderOrder — cubes never depth-fight each other or the backdrop).
+// Position a wall's assigned (scene-child) projector in front of its face. withCursor adds the
+// reverse-parallax cursor offset (active wall only). Runs each frame for every visible wall.
+function _placeProjector(wall, withCursor) {
+  const pj = _wallProjector(wall);
+  const g = wall.group;
+  _pjN.set(0, 0, 1).applyQuaternion(g.quaternion); // face normal (toward camera)
+  _pjPos.copy(g.position).addScaledVector(_pjN, PROJ_DIST);
+  if (withCursor) {
+    _pjR.set(1, 0, 0).applyQuaternion(g.quaternion);
+    _pjU.set(0, 1, 0).applyQuaternion(g.quaternion);
+    _pjPos.addScaledVector(_pjR, mouse.x * PROJ_TRAVEL).addScaledVector(_pjU, mouse.y * PROJ_TRAVEL);
+  }
+  pj.place(_pjPos, g.position);
+}
+
+// Show/hide a wall together with its assigned (pooled) projector, so a hidden wall casts no
+// light and a shown wall is immediately lit (the incoming wall swipes in already projected).
+// The projector stays a scene child (constant light count); only its image/tint/intensity and
+// world position change here — placement is refreshed every frame in _tick.
+function _setWallVisible(wall, vis) {
+  wall.group.visible = vis;
+  const pj = _wallProjector(wall);
+  if (vis) {
+    pj.setImage(ORBIT_PROJECTS[wall.idx]?.coverImage || null);
+    pj.transition(_atmoFor(wall.idx).glow, { duration: 0 });
+    pj.setIntensity(pj.params.intensityIdle);
+    _placeProjector(wall, wall === _activeWall);
+  } else {
+    pj.setIntensity(0);
+  }
+}
+
+// Point the module-level "active" singletons at `wall` so the existing per-frame interactive
+// code (reveal, flowmap, tilt, GUI) drives whichever wall the camera is currently facing.
+function _activateWall(wall) {
+  if (!wall) return;
+  _activeWall = wall;
+  currentIdx  = wall.idx;
+  voxelMesh   = wall.mesh;
+  cardGroup   = wall.group;
+  _curPos     = wall.curPos;
+  _scaleArr   = wall.scaleArr;
+  _uvOffset   = wall.uvOffset;
+  _vox        = wall.vox;
+  _revealArr  = wall.revealArr;
+  _revealAttr = wall.revealAttr;
+  _bumpArr    = wall.bumpArr;
+  _bumpAttr   = wall.bumpAttr;
+  _N          = wall.N;
+  _coverTex   = wall.coverTex;
+  _wobble     = wall.wobble;
+  _projector  = _wallProjector(wall); // cursor tracking (in _tick) drives the active wall's lamp
+  _revealU = _cubeU = wall.cubeU;
+  wall.cubeU.uTransScale.value = 1; // the centred wall is always full size
+  // Reset interaction state so the new wall starts idle (no stale cursor pool carrying over).
+  _hover = 0; _hoverTarget = 0; _cardProx = 0;
+  // Only the active wall is visible+lit at rest — hide every neighbour (and kill its lamp) so
+  // none peeks or casts stray light (a turn re-shows just the incoming wall; see navigate).
+  for (const w of _pool.values()) _setWallVisible(w, w === wall);
+}
+
+// C2 cube material: unlit, maps the wall's cover via a per-cube UV window, with the
+// cursor-reveal grade + living-depth field patched into the shader (per-wall uniform table).
+function _makeCubeMaterial(wall) {
   const m = new THREE.MeshStandardMaterial({
-    map: _coverTex, side: THREE.FrontSide,
+    map: wall.coverTex, side: THREE.FrontSide,
     color: 0x808080,
     roughness: 1.0, metalness: 0.0, envMapIntensity: 0.75,
     transparent: true, depthWrite: false, depthTest: false, dithering: true,
     blending: THREE.NormalBlending,
   });
-  _patchCube(m);
+  _patchCube(m, wall);
   return m;
 }
 
-// Compose every instance matrix from current positions + per-instance scale.
-function _writeAllMatrices() {
-  if (!voxelMesh) return;
-  for (let i = 0; i < _N; i++) {
-    _v3.set(_curPos[i * 3], _curPos[i * 3 + 1], _curPos[i * 3 + 2]);
-    const s = _scaleArr[i];
+// Compose a wall's instance matrices from its current positions + per-instance scale.
+function _writeMatrices(wall) {
+  const mesh = wall.mesh;
+  for (let i = 0; i < wall.N; i++) {
+    _v3.set(wall.curPos[i * 3], wall.curPos[i * 3 + 1], wall.curPos[i * 3 + 2]);
+    const s = wall.scaleArr[i];
     _sv.set(s, s, s);
     _m4.compose(_v3, _qI, _sv);
-    voxelMesh.setMatrixAt(i, _m4);
+    mesh.setMatrixAt(i, _m4);
   }
-  voxelMesh.instanceMatrix.needsUpdate = true;
+  mesh.instanceMatrix.needsUpdate = true;
 }
 
 // Push the current per-instance colours (sRGB 0–1) into instanceColor.
 // Project the cursor onto the card plane → card-local face coords, feed the shader.
 function _updateReveal() {
-  if (!cardGroup || !_revealU) { _hover += (_hoverTarget - _hover) * 0.08; return; }
+  // Freeze the cursor lens during a turn: the active wall is swinging out of frame and the
+  // arriving wall starts idle (reset in _activateWall), so no reveal work is meaningful.
+  if (!cardGroup || !_revealU || isTransitioning) { _hover += (0 - _hover) * 0.08; return; }
   cardGroup.updateMatrixWorld();
   _raycaster.setFromCamera(targetMouse, camera);
   _planeN.set(0, 0, 1).applyQuaternion(cardGroup.quaternion);
@@ -748,56 +872,164 @@ function _updateReveal() {
   }
 }
 
-// ── Project switching ─────────────────────────────────────────────────────────
+// ── Project switching (Model 1: camera orbits the ring to the neighbour wall) ────
 
-export function setProject(idx) {
-  if (isTransitioning || idx === currentIdx) return;
-  if (idx < 0 || idx >= ORBIT_PROJECTS.length) return;
-  isTransitioning = true;
-  currentIdx = idx;
+// Free a wall's GPU resources. The cover texture is cached in _texCache and reused, so it
+// is NOT disposed here; the shared colRand/runRand JS arrays live on (each wall wrapped them
+// in its own attribute, so this geometry.dispose() only frees this wall's buffers).
+function _disposeWall(wall) {
+  if (!wall) return;
+  // Projectors are permanent scene children (never parented to wall groups), so nothing to
+  // rescue here — just free this wall's geometry/material. (Called only on destroy.)
+  scene.remove(wall.group);
+  wall.mesh.geometry.dispose();
+  wall.mesh.material.dispose();
+}
 
-  const preset    = LIGHTING_PRESETS[idx];
-  const startTime = performance.now();
-  const duration  = 800;
+// Move a cached wall to a ring slot (position, yaw, wobble origin). Cheap — no rebuild/recompile.
+function _repositionWall(wall, slot) {
+  wall.slotIndex = slot;
+  wall.theta = slot * RING_STEP;
+  _ringSlot(wall.theta, wall.group.position);
+  wall.group.rotation.y = wall.theta;
+  if (wall.wobble?.origin) wall.wobble.origin.copy(wall.group.position);
+}
 
-  const fromFogColor = scene.fog.color.clone();
-  const toFogColor   = new THREE.Color(preset.fog);
-
-  const newCover  = ORBIT_PROJECTS[idx]?.coverImage || null;
-  // Swap the cube texture to the new cover (the image lives in the cube tiles).
-  if (newCover) {
-    _loadCoverTexture(newCover).then((info) => {
-      if (!info || !voxelMesh) return;
-      _coverTex = info.texture;
-      voxelMesh.material.map = info.texture;
-      voxelMesh.material.needsUpdate = true;
-    });
+// Get the cached wall for a project (building + caching it once on first visit), placed at `slot`.
+// Concurrent first-visit calls for the same project share one build via _building.
+async function _getWall(idx, slot) {
+  let wall = _wallCache.get(idx);
+  if (!wall) {
+    if (!_building.has(idx)) {
+      _building.set(idx, _buildWall(idx, slot).then((w) => {
+        _building.delete(idx);
+        if (w) _wallCache.set(idx, w);
+        return w;
+      }));
+    }
+    wall = await _building.get(idx);
+    if (!wall) return null;
   }
-  if (_projector) _projector.setImage(newCover);
+  _repositionWall(wall, slot);
+  return wall;
+}
 
-  function _interpolate() {
-    const t    = Math.min((performance.now() - startTime) / duration, 1.0);
-    const ease = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+// Keep the pool = the active slot and its two neighbours (all cached/repositioned, none disposed).
+async function _ensureNeighbors() {
+  if (!_activeWall) return;
+  const S = _activeWall.slotIndex, P = _activeWall.idx, n = ORBIT_PROJECTS.length;
+  const want = [
+    { slot: S - 1, idx: (P - 1 + n) % n },
+    { slot: S,     idx: P },
+    { slot: S + 1, idx: (P + 1) % n },
+  ];
+  const walls = await Promise.all(want.map((x) => _getWall(x.idx, x.slot)));
+  _pool.clear();
+  want.forEach((x, i) => { if (walls[i]) _pool.set(x.slot, walls[i]); });
+  // Only the active wall is visible at rest; every other cached wall (neighbours + off-window) hidden.
+  for (const w of _wallCache.values()) _setWallVisible(w, w === _activeWall);
+}
 
-    scene.fog.color.lerpColors(fromFogColor, toFogColor, ease);
-    renderer.setClearColor(scene.fog.color);
+// Build the first wall at slot 0 and prefetch its neighbours (all cached for reuse).
+async function _initPool() {
+  const first = await _getWall(currentIdx, 0);
+  if (!first) return;
+  _pool.set(0, first);
+  _activateWall(first); // attaches + lights this wall's pooled projector via _setWallVisible
+  await _ensureNeighbors();
 
-    if (t < 1.0) requestAnimationFrame(_interpolate);
-    else isTransitioning = false;
-  }
+  // Warm each wall off-screen at load: neighbours sit a full RING_STEP to the side (out of frame),
+  // so fully showing+lighting them for a few frames lets the composer compile their shader variant
+  // AND uploads their projector cover textures now — instead of hitching mid-turn on first visit.
+  // No visible flash (they're off-frame). Then restore to just the active wall visible.
+  for (const w of _wallCache.values()) _setWallVisible(w, true);
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+  for (const w of _wallCache.values()) _setWallVisible(w, w === _activeWall);
+}
 
-  _interpolate();
-  // Environment retints on its own slow, staggered ~5s timeline (separate from the
-  // 800ms light/texture swap above).
-  if (_env) _env.transition(_accentFor(idx));
-  if (_cloud) _cloud.transition(_accentFor(idx));
-  if (_sky) _sky.setColor(_accentFor(idx));
+// Crossfade the world (fog + medium + lights + projector tint) to `idx` over `duration`.
+function _retint(idx, duration) {
+  const preset = LIGHTING_PRESETS[idx % LIGHTING_PRESETS.length];
+  const toFog  = new THREE.Color(preset.fog);
+  gsap.killTweensOf(scene.fog.color);
+  gsap.to(scene.fog.color, {
+    r: toFog.r, g: toFog.g, b: toFog.b, duration, ease: 'power2.inOut',
+    onUpdate: () => renderer.setClearColor(scene.fog.color),
+  });
   if (_floor) _floor.setColor(_accentFor(idx));
-  if (_mistFront) _mistFront.setColor(_accentFor(idx));
-  _medium?.transition(_atmoFor(idx));   // one tween — backdrop, veil, floor fog, card tint follow
-  _sideLight?.transition(_atmoFor(idx).glow);
-  _projector?.transition(_atmoFor(idx).glow);
-  _updateProjectUI(idx);
+  _medium?.transition(_atmoFor(idx), { duration });
+  _sideLight?.transition(_atmoFor(idx).glow, { duration });
+  // (per-wall projectors carry their own palette tint from build — nothing to retint here)
+}
+
+const ORBIT_DURATION = 1.3; // seconds per project turn
+
+// Orbit the camera one ring step in `dir` (+1 next / -1 prev) to the neighbouring wall.
+function navigate(dir) {
+  if (isTransitioning || !_activeWall) return;
+  const targetSlot = _activeWall.slotIndex + dir;
+  const targetWall = _pool.get(targetSlot);
+  if (!targetWall) return; // neighbour not built yet — ignore
+  isTransitioning = true;
+  const newIdx = targetWall.idx;
+
+  // Reveal + light the incoming wall from ITS OWN projector, so it swipes in already projected.
+  // The outgoing (active) wall keeps its own lamp and swipes out still lit; _activateWall hides
+  // it (and kills its lamp) on settle. World palette crossfades across the turn.
+  _setWallVisible(targetWall, true);
+  _updateProjectUI(newIdx);
+
+  const outWall = _activeWall;
+  outWall.cubeU.uTransScale.value  = 1; // shrinks 1→0 across the turn
+  targetWall.cubeU.uTransScale.value = 0; // grows 0→1 across the turn (start hidden-small)
+
+  // Warm the wall that will become the new far neighbour DURING the turn: for a project already
+  // visited this is a cheap reposition; for a first visit it builds+compiles off-screen mid-turn
+  // (masked by motion) instead of hitching at settle. Fire-and-forget; _ensureNeighbors reconciles.
+  const n = ORBIT_PROJECTS.length;
+  _getWall((newIdx + dir + n) % n, targetSlot + dir);
+
+  const settle = () => {
+    _camAzimuth = targetSlot * RING_STEP;
+    _activateWall(targetWall);                // interaction transfers to the arrived wall (scale→1)
+    _ensureNeighbors().then(() => { isTransitioning = false; });
+  };
+
+  // Reduced motion: no camera sweep — snap the yaw and do a quick palette crossfade instead.
+  if (prefersReduced) {
+    _retint(newIdx, 0.4);
+    _camAzimuth = targetSlot * RING_STEP;
+    settle();
+    return;
+  }
+
+  _retint(newIdx, ORBIT_DURATION);
+  const orbit = { a: _camAzimuth };
+  gsap.killTweensOf(orbit);
+  const tween = gsap.to(orbit, {
+    a: targetSlot * RING_STEP, duration: ORBIT_DURATION, ease: 'power2.inOut',
+    onUpdate: () => {
+      _camAzimuth = orbit.a;
+      // Cube-size effect on the turn's LINEAR progress. Outgoing shrinks front-loaded ((1-p)²)
+      // so it's mostly gone while still on screen; incoming grows back-loaded (p²) so it stays
+      // near zero until it enters frame then assembles to full right as it centres.
+      const p = tween.progress();
+      const inv = 1 - p;
+      outWall.cubeU.uTransScale.value    = inv * inv;
+      targetWall.cubeU.uTransScale.value = p * p;
+    },
+    onComplete: settle,
+  });
+}
+
+// Public API: jump to a project index by turning the short way around the ring (one step for
+// adjacent projects; the index list is small so a single step reaches any neighbour).
+export function setProject(idx) {
+  if (isTransitioning || !_activeWall || idx === _activeWall.idx) return;
+  if (idx < 0 || idx >= ORBIT_PROJECTS.length) return;
+  const n = ORBIT_PROJECTS.length;
+  const fwd = (idx - _activeWall.idx + n) % n;    // steps going next
+  navigate(fwd <= n - fwd ? 1 : -1);
 }
 
 export function setPaused(paused) {
@@ -822,19 +1054,21 @@ function _loadCoverTexture(path) {
 // Patch the cube shader (D1 reveal + D2 living depth field). Per cube: UV window into
 // the cover; cursor-proximity reveal (grade + dissolve); continuous idle Z oscillation
 // per depth layer; zone-based visibility with mid/outer holes; and a soft hover pull.
-function _patchCube(material) {
-  material.onBeforeCompile = (shader) => {
-    // The uniform table is built ONCE and reused across recompiles. The material
-    // recompiles whenever scene-level defines change (e.g. the projector spotlight's
-    // .map toggling null↔texture on project switch) — a fresh table each time would
-    // orphan the GUI bindings and reset every hand-tuned value.
-    _cubeU = _cubeU || {
-      uTileScale: { value: _uvScale },
-      uUvOrigin:   { value: _uvOrigin }, // (offU,offV) cover-fit origin for live-position UV
+function _patchCube(material, wall) {
+  // Per-wall uniform table, built synchronously so it's available before first compile
+  // (the tick loop and _activateWall reference wall.cubeU immediately). Captured in the
+  // onBeforeCompile closure and reused across recompiles so GUI bindings survive. Per-wall
+  // fields: uTileScale/uUvOrigin (cover-fit), uCursor/uHover (interaction — only the active
+  // wall's are driven; neighbours idle at uHover 0). Shared by reference: uFog (medium base),
+  // uFlowmap, uHalfExtent (all walls share one geometry footprint).
+  const cubeU = {
+      uTileScale: { value: wall.uvScale },
+      uUvOrigin:   { value: wall.uvOrigin }, // (offU,offV) cover-fit origin for live-position UV
       uDriftAmt:   { value: 0.0 },       // XY drift OFF — ref keeps every cube on the grid lattice
       uDriftSpeed: { value: 0.4 },       // drift wander speed
-      uCursor:    { value: _cursor },
-      uHover:     { value: _hover },
+      uTransScale: { value: 1.0 },       // per-wall cube size 0→1 (transition shrink/grow; 1 = full)
+      uCursor:    { value: new THREE.Vector2() },
+      uHover:     { value: 0 },
       uRadius:    { value: REVEAL_RADIUS },
       uIdleFloor: { value: IDLE_FLOOR },
       uSatFar:    { value: 0.45 },
@@ -887,15 +1121,18 @@ function _patchCube(material) {
       uGrainScale: { value: 1.6 },   // noise frequency across the card face
       uGrainAmt:   { value: 0.16 },  // brightness variation (± fraction)
       uGrainRough: { value: 0.30 },  // roughness variation (± absolute)
-    };
-    Object.assign(shader.uniforms, _cubeU);
-    _revealU = _cubeU;
+  };
+  wall.cubeU = cubeU;
+
+  material.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, cubeU);
 
     shader.vertexShader = shader.vertexShader
       .replace('void main() {', /* glsl */`
         attribute vec2 aUvOffset; attribute vec3 aVox; attribute float aReveal; attribute float aColRand; attribute float aRunRand; attribute float aBump;
         uniform vec2 uTileScale; uniform vec2 uCursor; uniform vec2 uHalfExtent; uniform vec2 uUvOrigin;
         uniform float uHover; uniform float uRadius; uniform float uIdleFloor; uniform float uDriftAmt; uniform float uDriftSpeed;
+        uniform float uTransScale;
         uniform float uTime; uniform float uRipplePeriod; uniform float uRippleAmp; uniform float uDepthVisFar; uniform float uKeepFrac; uniform float uDenseRadius; uniform float uFadeRadius;
         uniform float uCullScale; uniform float uCullDrift;
         uniform float uPullXY; uniform float uPullZ;
@@ -923,6 +1160,9 @@ function _patchCube(material) {
         vMapUv = aUvOffset + uv * uTileScale;`)
       .replace('#include <begin_vertex>', /* glsl */`
         #include <begin_vertex>
+        // Transition scale — shrink each cube around its own centre (0 = gone, 1 = full). Applied
+        // to the geometry vertex before displacements so the card dissolves into shrinking cubes.
+        transformed *= uTransScale;
         vec3  _ctr = vec3(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2]);
         float _r   = clamp(length(_ctr.xy / uHalfExtent), 0.0, 1.0); // 0 centre → ~1 edge
         float _lay = aVox.x;
@@ -1075,7 +1315,10 @@ function _patchCube(material) {
         diffuseColor.rgb = _c;                          // every cube shows its image fragment
         diffuseColor.a *= vAlpha;                      // glass faint/clearing, image layer solid`);
   };
-  material.customProgramCacheKey = () => 'voxel-cube-reveal';
+  // Unique per wall: each wall material must compile its own program so its onBeforeCompile
+  // runs and its per-wall uniform table is merged (a shared key would reuse one program and
+  // skip the merge for later walls).
+  material.customProgramCacheKey = () => 'voxel-cube-reveal-' + wall.uid;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1211,7 +1454,10 @@ export function destroy() {
   _wobble = null;
   _mistFront?.destroy();
   _mistFront = null;
-  _projector?.destroy();
+  for (const w of _wallCache.values()) _disposeWall(w);
+  _wallCache.clear();
+  _projPool.forEach((p) => p.destroy());
+  _projPool = [];
   _projector = null;
   _atmo?.destroy();
   _atmo = null;
@@ -1222,6 +1468,9 @@ export function destroy() {
   _sideLight?.destroy();
   _sideLight = null;
   if (_ambient) { gsap.killTweensOf(_ambient.color); scene?.remove(_ambient); _ambient.dispose(); _ambient = null; }
+  if (scene?.fog) gsap.killTweensOf(scene.fog.color);
+  _pool.clear();
+  _activeWall = null;
   window.removeEventListener('resize',    _handlers.resize);
   window.removeEventListener('mousemove', _handlers.mousemove);
   window.removeEventListener('keydown',   _handlers.keydown);

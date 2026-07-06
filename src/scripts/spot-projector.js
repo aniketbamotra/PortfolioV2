@@ -10,6 +10,10 @@ import * as THREE from 'three';
 import gsap from 'gsap';
 
 const _loader = new THREE.TextureLoader();
+// Shared across all projectors: each cover texture loads + uploads to the GPU once, then is
+// reused (projectors recycle covers as walls cycle, so re-loading each show would re-upload and
+// hitch the transition frame).
+const _projTexCache = new Map();
 
 export function initProjector({ scene, target = new THREE.Vector3(0, 0, 0) } = {}) {
   const base = new THREE.Vector3(0, 0, 3.25);
@@ -44,12 +48,14 @@ export function initProjector({ scene, target = new THREE.Vector3(0, 0, 0) } = {
 
     setImage(path) {
       if (!path) { light.map = null; return; }
+      const cached = _projTexCache.get(path);
+      if (cached) { _tex = cached; light.map = cached; return; } // reuse — no reload/re-upload
       _loader.load(path, (tex) => {
         tex.colorSpace = THREE.SRGBColorSpace;
         tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
         tex.center.set(0.5, 0.5);
         tex.rotation = Math.PI;          // pre-invert to cancel the projector's point-inversion
-        _tex?.dispose();
+        _projTexCache.set(path, tex);
         _tex = tex;
         light.map = tex;
       });
@@ -67,6 +73,14 @@ export function initProjector({ scene, target = new THREE.Vector3(0, 0, 0) } = {
 
     setIntensity(v) { light.intensity = v; },
 
+    // World-space placement: the lamp stays a permanent scene child (so the scene's light count
+    // never changes — a light inside a hidden group would be dropped from the render and force a
+    // recompile of every material). three-scene positions it in front of the wall each frame.
+    place(pos, target) {
+      light.position.copy(pos);
+      tgt.position.copy(target);
+    },
+
     // Lean the light color toward the project palette's glow — the card sits in the same
     // color family as the atmosphere without muddying the projected cover.
     transition(glowHex, { duration = 1.2 } = {}) {
@@ -79,7 +93,8 @@ export function initProjector({ scene, target = new THREE.Vector3(0, 0, 0) } = {
       gsap.killTweensOf(light.color);
       scene.remove(light);
       scene.remove(tgt);
-      _tex?.dispose();
+      // _tex is shared via _projTexCache — don't dispose it here (other projectors reuse it;
+      // the GPU context teardown on renderer.dispose reclaims it).
     },
   };
 }

@@ -1127,76 +1127,55 @@
   },
   "perProject": [
     {
-      "id": "design-language-system",
-      "title": "Design Language System",
-      "envAccent": "#7fa0ff",
+      "id": "keploy",
+      "title": "Keploy",
+      "envAccent": "#ffaa66",
       "atmosphereColor": "#08080f",
       "atmo": {
         "base": "#111111",
-        "fog": "#e3e3e3",
+        "fog": "#f2ddc2",
         "glow": "#e8913f",
         "smoke": "#b25325"
       },
       "coverImage": "/assets/projects/keploy.png",
-      "lightingPresetIndex": 0
+      "lightingPresetIndex": 0,
+      "paletteSource": "hand-tuned reference 2026-07-03 (derive-atmo.mjs reproduces it within a few degrees)"
     },
     {
-      "id": "interactive-product-experience",
-      "title": "Interactive Product Experience",
-      "envAccent": "#aabbff",
-      "atmosphereColor": "#0f0505",
-      "atmo": {
-        "base": "#4f5fd8",
-        "fog": "#ffffff",
-        "glow": "#ffffff",
-        "smoke": "#020210"
-      },
-      "coverImage": null,
-      "lightingPresetIndex": 1
-    },
-    {
-      "id": "brand-platform",
-      "title": "Brand & Web Platform",
+      "id": "gemx",
+      "title": "GEMx",
       "envAccent": "#55ddaa",
-      "atmosphereColor": "#04090a",
+      "atmosphereColor": "#04100a",
       "atmo": {
-        "base": "#2f9a72",
-        "fog": "#ffffff",
-        "glow": "#ffffff",
-        "smoke": "#010504"
+        "base": "#111111",
+        "fog": "#eaeec4",
+        "glow": "#40e788",
+        "smoke": "#2ea87b"
       },
-      "coverImage": null,
-      "lightingPresetIndex": 2
+      "coverImage": "/assets/projects/Gemx.png",
+      "lightingPresetIndex": 1,
+      "paletteSource": "derived from Gemx.png (dominant hue 157.7°) via scripts/derive-atmo.mjs"
     },
     {
-      "id": "analytics-dashboard",
-      "title": "Analytics Dashboard",
-      "envAccent": "#5577cc",
-      "atmosphereColor": "#04070f",
+      "id": "demand-climate-justice",
+      "title": "Demand Climate Justice",
+      "envAccent": "#e8b98a",
+      "atmosphereColor": "#0d0a06",
       "atmo": {
-        "base": "#35509f",
-        "fog": "#ffffff",
-        "glow": "#ffffff",
-        "smoke": "#010208"
+        "base": "#111111",
+        "fog": "#eedac4",
+        "glow": "#e79140",
+        "smoke": "#a8582e"
       },
-      "coverImage": null,
-      "lightingPresetIndex": 3
-    },
-    {
-      "id": "creative-experiments",
-      "title": "Creative Experiments",
-      "envAccent": "#ffaa44",
-      "atmosphereColor": "#0d0a03",
-      "atmo": {
-        "base": "#b5641f",
-        "fog": "#ffffff",
-        "glow": "#ffffff",
-        "smoke": "#070301"
-      },
-      "coverImage": null,
-      "lightingPresetIndex": 4
+      "coverImage": "/assets/projects/DCJ.png",
+      "lightingPresetIndex": 2,
+      "paletteSource": "derived from DCJ.png (dominant hue 20.7°) via scripts/derive-atmo.mjs"
     }
   ],
+  "paletteDerivation": {
+    "script": "scripts/derive-atmo.mjs (one-off, node + sharp)",
+    "note": "Samples the cover image's dominant hue cluster (15° bins, chroma-weighted, greys/extremes excluded) and emits the four palette roles as literals: base fixed #111111; smoke = hsl(hue, .57, .42); glow = hue nudged ≤12° toward 45° warm anchor at hsl(·, .78, .58) — never white; fog = warm cream (35°) taking a 25% project tint at hsl(·, .55, .85). Calibrated so keploy.png reproduces the hand-tuned project-0 palette."
+  },
   "assets": {
     "skyEnvExr": "/assets/sky_env.exr",
     "cubePositions": "/assets/cube_positions.json",

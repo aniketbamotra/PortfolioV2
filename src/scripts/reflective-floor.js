@@ -57,9 +57,20 @@ const FLOOR_FRAG = /* glsl */`
   void main(){
     #include <logdepthbuf_fragment>
 
-    // Reference formula: one STATIC normal sample builds a soft terrain normal; the
-    // reflection is offset by it in projected space (coord.z scales the parallax).
-    vec4 nc = texture2D(tNormalMap, vMeshUv * uNormalScale);
+    // Living water normal: TWO copies of the normal map scroll in different directions
+    // and blend — the classic water trick. The surface's own shading (fresnel), the
+    // reflection distortion, and the visible grain all undulate together. uWaveSpeed
+    // drives the scroll; uWaveAmp cross-fades static terrain → moving water.
+    vec2 nuv = vMeshUv * uNormalScale;
+    vec4 ncs = texture2D(tNormalMap, nuv);
+    vec4 nc1 = texture2D(tNormalMap, nuv + vec2(0.045, 0.032) * uTime * uWaveSpeed);
+    vec4 nc2 = texture2D(tNormalMap, nuv * 0.72 - vec2(0.038, -0.027) * uTime * uWaveSpeed + 0.37);
+    float waveMix = clamp(uWaveAmp * 40.0, 0.0, 1.0);
+    // Blending two maps averages out relief — re-expand around the neutral normal so the
+    // moving water keeps the same wave height as the still terrain.
+    vec4 ncm = (nc1 + nc2) * 0.5;
+    ncm = (ncm - vec4(0.5, 0.5, 0.0, 0.5)) * 1.6 + vec4(0.5, 0.5, 0.0, 0.5);
+    vec4 nc = mix(ncs, ncm, waveMix);
     vec3 normal = normalize(vec3(nc.r * uDist - uDist * 0.5, nc.b, nc.g * uDist - uDist * 0.5));
     vec3 coord = vUv.xyz / vUv.w;
 
@@ -176,10 +187,11 @@ export function initReflectiveFloor({ scene, accent, renderer, medium } = {}) {
         uWashGain:    { value: 0.0 },   // glow-side ground wash (GUI-restorable)
         uContactDark: { value: 0.0 },   // contact shadow under the card (GUI-restorable)
         uFogCol:    { value: new THREE.Color(0xf2ddc2) }, // placeholder — medium adopted below
-        // live micro-waves on the mirror lookup
-        uWaveAmp:   { value: 0.006 },
+        // live waves — scrolling dual normal maps (surface + reflection move together);
+        // amp saturates the water blend at 0.025, speed 1 ≈ one texture repeat / ~35 s
+        uWaveAmp:   { value: 0.025 },
         uWaveScale: { value: 1.2 },
-        uWaveSpeed: { value: 0.5 },
+        uWaveSpeed: { value: 1.5 },
         // ground mist banks flanking the card
         uMistAmt:   { value: 0.5 },
         uMistInner: { value: 3.5 },
