@@ -1157,7 +1157,12 @@ function _patchCube(material, wall) {
         void main() {`)
       .replace('#include <uv_vertex>', /* glsl */`
         #include <uv_vertex>
-        vMapUv = aUvOffset + uv * uTileScale;`)
+        // vMapUv is a three built-in varying declared only under USE_MAP (i.e. when the cover
+        // texture is present). Guard every write/read so the card still compiles + renders when
+        // a cover is slow or fails to load — otherwise the whole material fails to link.
+        #ifdef USE_MAP
+        vMapUv = aUvOffset + uv * uTileScale;
+        #endif`)
       .replace('#include <begin_vertex>', /* glsl */`
         #include <begin_vertex>
         // Transition scale — shrink each cube around its own centre (0 = gone, 1 = full). Applied
@@ -1253,10 +1258,12 @@ function _patchCube(material, wall) {
         // live-position UV: sample the cover under the cube's CURRENT location, continuously
         // (no grid quantization) so a drifting cube's fragment slides smoothly — no pop.
         // Resolves to the correct image when collapsed (drift = 0) → crisp on hover.
+        #ifdef USE_MAP
         vec2 _facePos = _ctr.xy + _drift;
         vec2 _uv01    = clamp(_facePos / (2.0 * uHalfExtent) + 0.5, 0.0, 1.0);
         vec2 _win     = uUvOrigin + _uv01 * (uTileScale * vec2(40.0, 24.0)) - 0.5 * uTileScale;
-        vMapUv = _win + uv * uTileScale;`);
+        vMapUv = _win + uv * uTileScale;
+        #endif`);
 
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <roughnessmap_fragment>', /* glsl */`
@@ -1286,10 +1293,11 @@ function _patchCube(material, wall) {
         }
         void main() {`)
       .replace('#include <map_fragment>', /* glsl */`
-        // Flowmap: cursor velocity distorts the image UV so it "pours" on drag.
-        vec2 _flowVel = texture2D(uFlowmap, vFaceUv).rg;
-        vec2 _flowedUv = vMapUv + _flowVel * uFlowStrength * uHover;
         #ifdef USE_MAP
+          // Flowmap: cursor velocity distorts the image UV so it "pours" on drag.
+          // (vMapUv only exists under USE_MAP — keep the flow-UV read inside the guard.)
+          vec2 _flowVel = texture2D(uFlowmap, vFaceUv).rg;
+          vec2 _flowedUv = vMapUv + _flowVel * uFlowStrength * uHover;
           vec4 sampledDiffuseColor = texture2D(map, _flowedUv);
           #ifdef DECODE_VIDEO_TEXTURE
             sampledDiffuseColor = sRGBTransferEOTF(sampledDiffuseColor);
