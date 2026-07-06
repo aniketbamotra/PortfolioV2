@@ -4,6 +4,8 @@
   "version": "0.0.1",
   "scripts": {
     "dev": "astro dev",
+    "check:assets": "node scripts/check-asset-case.mjs",
+    "prebuild": "node scripts/check-asset-case.mjs",
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro"
