@@ -5,6 +5,11 @@ import Nav from '../components/Nav.astro';
 import WorkEntry from '../components/WorkEntry.astro';
 import WorkEntrySmall from '../components/WorkEntrySmall.astro';
 import { ALL_PROJECTS } from '../data/projects.js';
+import '../styles/global.css';
+import '../styles/home.css';
+import '../styles/work.css';
+import '../styles/about.css';
+import '../styles/nav.css';
 
 const majorProjects = ALL_PROJECTS.filter(p => p.hasCaseStudy);
 const minorProjects = ALL_PROJECTS.filter(p => !p.hasCaseStudy);
@@ -18,11 +23,6 @@ const minorProjects = ALL_PROJECTS.filter(p => !p.hasCaseStudy);
   <title>Aniket Bamotra — UX Engineer & Creative Technologist</title>
   <meta name="description" content="UX Engineer and Creative Technologist. Design × Engineering." />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="stylesheet" href="/src/styles/global.css" />
-  <link rel="stylesheet" href="/src/styles/home.css" />
-  <link rel="stylesheet" href="/src/styles/work.css" />
-  <link rel="stylesheet" href="/src/styles/about.css" />
-  <link rel="stylesheet" href="/src/styles/nav.css" />
 </head>
 <body>
   <!-- Curtain overlay for page transitions -->

@@ -6,6 +6,9 @@ import Nav from '../../components/Nav.astro';
 import WorkEntry from '../../components/WorkEntry.astro';
 import WorkEntrySmall from '../../components/WorkEntrySmall.astro';
 import { ALL_PROJECTS } from '../../data/projects.js';
+import '../../styles/global.css';
+import '../../styles/work.css';
+import '../../styles/nav.css';
 
 const majorProjects = ALL_PROJECTS.filter(p => p.hasCaseStudy);
 const minorProjects = ALL_PROJECTS.filter(p => !p.hasCaseStudy);
@@ -19,9 +22,6 @@ const minorProjects = ALL_PROJECTS.filter(p => !p.hasCaseStudy);
   <title>Work — Aniket Bamotra</title>
   <meta name="description" content="Selected work by Aniket Bamotra — enterprise systems, creative builds, open experiments." />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="stylesheet" href="/src/styles/global.css" />
-  <link rel="stylesheet" href="/src/styles/work.css" />
-  <link rel="stylesheet" href="/src/styles/nav.css" />
 </head>
 <body>
   <div id="curtain"></div>
