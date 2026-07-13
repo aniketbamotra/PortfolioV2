@@ -19,7 +19,9 @@ export function initProjector({ scene, target = new THREE.Vector3(0, 0, 0) } = {
   const base = new THREE.Vector3(0, 0, 3.25);
 
   // Physical decay=2: intensity falls off with distance² → natural centre-bright vignette.
-  const light = new THREE.SpotLight(0xffffff, 400, 0, Math.PI / 4, 1, 2);
+  // Keep the gobo legible, but let it behave like a contained pool of light rather
+  // than a self-illuminated screen. The atmosphere is the broad source; this is key light.
+  const light = new THREE.SpotLight(0xffffff, 130, 0, Math.PI / 4, 1, 2);
   light.position.copy(base);
   light.shadow.camera.near = 0.5;
   light.shadow.camera.far  = 12;
@@ -37,8 +39,8 @@ export function initProjector({ scene, target = new THREE.Vector3(0, 0, 0) } = {
   const params = {
     travel: 1.0,        // cursor → light translation range (world units)
     tint: 0.0,          // palette lean of the light color (off — tuned 2026-07-03; GUI can raise)
-    intensityIdle: 400, // tuned 2026-07-03: full projection at rest — the lit medium wants a lit card
-    intensityMax: 400,  // full projection when the cursor is on the card
+    intensityIdle: 92,
+    intensityMax: 145,
   };
   let _presence = 0;    // smoothed cursor-on-card proximity driving the swell
 

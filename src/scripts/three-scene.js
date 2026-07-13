@@ -102,6 +102,7 @@ const _sv = new THREE.Vector3();
 const _qI = new THREE.Quaternion();
 // Scratch for placing a wall's (scene-child) projector in world space each frame.
 const _pjPos = new THREE.Vector3(), _pjN = new THREE.Vector3(), _pjR = new THREE.Vector3(), _pjU = new THREE.Vector3();
+const _slPos = new THREE.Vector3(); // scratch: side-light world anchor (active wall's frame)
 const PROJ_DIST = 3.25, PROJ_TRAVEL = 1.0; // lamp stand-off from the face · cursor travel range
 // (cursor-torch scratch removed — using _hit / _cursor directly)
 
@@ -282,13 +283,13 @@ export function initScene(canvas) {
   camera.lookAt(0, 0, 0);
 
   // Post-processing — bloom + vignette, plus DOF + chromatic aberration (cinematic).
-  bloomEffect = new BloomEffect({ intensity: 1.12, luminanceThreshold: 0.19, luminanceSmoothing: 0.7, mipmapBlur: true, radius: 0.31 });
-  const vignetteEffect = new VignetteEffect({ darkness: 0.67, offset: 0 });
+  bloomEffect = new BloomEffect({ intensity: 0.78, luminanceThreshold: 0.48, luminanceSmoothing: 0.78, mipmapBlur: true, radius: 0.42 });
+  const vignetteEffect = new VignetteEffect({ darkness: 0.58, offset: 0.12 });
   // Film grain — OVERLAY keeps grain visible in shadows (SCREEN only lifts; premultiplied
   // grain vanishes in a mostly-dark frame). Tuned 2026-07-03: ON, opacity 0.32 — the film
   // finish of the cinematic pass. _originalBlend lets the GUI toggle round-trip it.
   const noiseEffect = new NoiseEffect({ blendFunction: BlendFunction.OVERLAY, premultiply: false });
-  noiseEffect.blendMode.opacity.value = 0.32;
+  noiseEffect.blendMode.opacity.value = 0.14;
   noiseEffect._originalBlend = BlendFunction.OVERLAY;
   const chromaticAberration = new ChromaticAberrationEffect({
     offset: new THREE.Vector2(0.0012, 0.0012), radialModulation: true, modulationOffset: 0.15,
@@ -381,9 +382,9 @@ export function initScene(canvas) {
   _sideLight = initSideLight({ scene });
   _sideLight.transition(_atmoFor(0).glow, { duration: 0 });
 
-  // Ambient light — off in the tuned look (the white-fog atmosphere + projector carry the
-  // scene). Kept in the scene at 0 so the GUI can dial it back in.
-  _ambient = new THREE.AmbientLight(0xffffff, 0);
+  // A trace of blue-grey fill keeps the shadow-side voxel geometry present without flattening
+  // the projector's directional story.
+  _ambient = new THREE.AmbientLight(0xaab4c0, 0.025);
   scene.add(_ambient);
 
   // Foreground fog — retired: the atmosphere's fog layer carries the haze now.
@@ -571,9 +572,9 @@ export function initScene(canvas) {
     if (_medium) _medium.update(prefersReduced ? 0 : t, prefersReduced ? 0 : _energy, mouse.x, mouse.y);
     // Sky is world geometry (the dome) — camera motion moves it through the projection,
     // no manual parallax. update() only refreshes the screen-resolution uniform (ink).
-    if (_atmo) _atmo.update();
+    if (_atmo) { _atmo.setViewYaw(_camAzimuth); _atmo.update(); }
     if (_veil) _veil.update();
-    if (_sideLight) _sideLight.update(prefersReduced ? 0 : _energy, mouse.x, mouse.y);
+    if (_sideLight) { _placeSideLight(); _sideLight.update(prefersReduced ? 0 : _energy); }
     // (projectors are placed per visible wall in the tilt loop above — no single-lamp update)
     if (_gui && _revealU) _gui.addCubeControls(_revealU); // idempotent — attaches once shader is live
 
@@ -743,6 +744,48 @@ function _placeProjector(wall, withCursor) {
   pj.place(_pjPos, g.position);
 }
 
+// Seat the fog planes at a wall's ring slot as WORLD objects (veil 1.15 behind the face,
+// mist 3.0 in front — the offsets they were authored with at slot 0). Called on activation,
+// not per frame: at rest they're world-anchored (parallax like everything else), during a
+// turn the old seat sweeps out of frame with its wall, and the new seat is behind the
+// incoming wall — never a screen-glued fog layer.
+function _seatFogPlanes(wall) {
+  if (!wall) return;
+  const th = wall.theta;
+  _slPos.set(Math.sin(th), 0, Math.cos(th)); // wall face normal (toward the camera seat)
+  if (_veil) {
+    _ringSlot(th, _veil.mesh.position);
+    _veil.mesh.position.addScaledVector(_slPos, -1.15);
+    _veil.mesh.position.y += 0.12;
+    _veil.mesh.rotation.y = th;
+  }
+  if (_mistFront) {
+    _ringSlot(th, _mistFront.mesh.position);
+    _mistFront.mesh.position.addScaledVector(_slPos, 3.0);
+    _mistFront.mesh.position.y += 0.3;
+    _mistFront.mesh.rotation.y = th;
+  }
+}
+
+// Anchor the side rim light to the active wall's local frame (its params.x/y/z are offsets in
+// the wall's right/up/normal basis) plus a subtle cursor drift, so it keys the centred card
+// wherever the ring has scrolled to — instead of staying pinned near ring slot 0.
+function _placeSideLight() {
+  if (!_sideLight || !_activeWall) return;
+  const g = _activeWall.group;
+  const p = _sideLight.params;
+  _pjN.set(0, 0, 1).applyQuaternion(g.quaternion); // face normal (toward camera)
+  _pjR.set(1, 0, 0).applyQuaternion(g.quaternion); // wall-local right
+  _pjU.set(0, 1, 0).applyQuaternion(g.quaternion); // wall-local up
+  const dx = prefersReduced ? 0 : mouse.x * p.travel;
+  const dy = prefersReduced ? 0 : mouse.y * p.travel;
+  _slPos.copy(g.position)
+    .addScaledVector(_pjR, p.x + dx)
+    .addScaledVector(_pjU, p.y + dy)
+    .addScaledVector(_pjN, p.z);
+  _sideLight.place(_slPos);
+}
+
 // Show/hide a wall together with its assigned (pooled) projector, so a hidden wall casts no
 // light and a shown wall is immediately lit (the incoming wall swipes in already projected).
 // The projector stays a scene child (constant light count); only its image/tint/intensity and
@@ -780,6 +823,7 @@ function _activateWall(wall) {
   _coverTex   = wall.coverTex;
   _wobble     = wall.wobble;
   _projector  = _wallProjector(wall); // cursor tracking (in _tick) drives the active wall's lamp
+  _seatFogPlanes(wall); // world-anchored fog planes re-seat at the wall's ring slot
   _revealU = _cubeU = wall.cubeU;
   wall.cubeU.uTransScale.value = 1; // the centred wall is always full size
   // Reset interaction state so the new wall starts idle (no stale cursor pool carrying over).
@@ -977,6 +1021,7 @@ function navigate(dir) {
   // The outgoing (active) wall keeps its own lamp and swipes out still lit; _activateWall hides
   // it (and kills its lamp) on settle. World palette crossfades across the turn.
   _setWallVisible(targetWall, true);
+  _seatFogPlanes(targetWall); // fog bank waits at the destination slot before the sweep starts
   _updateProjectUI(newIdx);
 
   const outWall = _activeWall;

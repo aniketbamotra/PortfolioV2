@@ -153,7 +153,7 @@ export function initReflectiveFloor({ scene, accent, renderer, medium } = {}) {
 
   const geometry = new THREE.CircleGeometry(radius, 128);
   const floor = new Reflector(geometry, {
-    color: 0x3a3a3a,            // dark gray the boosted reflection multiplies
+    color: 0x282d33,            // dark wet ground; its illumination comes from reflected smoke
     textureWidth: 1024,
     textureHeight: 1024,
     clipBias: 0.003,
@@ -167,9 +167,9 @@ export function initReflectiveFloor({ scene, accent, renderer, medium } = {}) {
         uInk:          { value: flatInk },     // fluid dye — swapped in via setInk
         // Reflectivity 0.05 (raised 2026-07-03 from 0): a whisper of reflection at all
         // angles on top of the grazing fresnel sheen — wet stone, still not a mirror.
-        uReflectivity:     { value: 0.05 },
-        uMirror:           { value: 1.0 },     // 1 = pure reflection (base color term drops out)
-        uFloorMixStrength: { value: 7.1 },     // reflection boost
+        uReflectivity:     { value: 0.035 },
+        uMirror:           { value: 0.88 },    // broad, blurred environmental reflection
+        uFloorMixStrength: { value: 4.2 },     // bright atmosphere reads in the plane without chrome
         uDist:             { value: 1.6 },     // normal distortion strength
         uNormalScale:      { value: new THREE.Vector2(1.6, 1.6) },
         uRadius:           { value: 23 },
@@ -193,7 +193,7 @@ export function initReflectiveFloor({ scene, accent, renderer, medium } = {}) {
         uWaveScale: { value: 1.2 },
         uWaveSpeed: { value: 1.5 },
         // ground mist banks flanking the card
-        uMistAmt:   { value: 0.5 },
+        uMistAmt:   { value: 0.32 },
         uMistInner: { value: 3.5 },
         uMistOuter: { value: 11.0 },
         uMistFloor:     { value: 0.3 },  // min bank density — thins, never vanishes

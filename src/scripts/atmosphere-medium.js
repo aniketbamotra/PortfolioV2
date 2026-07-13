@@ -22,6 +22,7 @@ export const LIGHT_KERNEL_GLSL = /* glsl */`
 `;
 
 export function initAtmosphereMedium({ palette } = {}) {
+  const light = palette.light || {};
   const u = {
     // palette — crossfaded per project via transition(); consumers adopt the objects
     uBase:  { value: new THREE.Color(palette.base) },
@@ -29,12 +30,12 @@ export function initAtmosphereMedium({ palette } = {}) {
     uGlow:  { value: new THREE.Color(palette.glow) },
     uSmoke: { value: new THREE.Color(palette.smoke) },
     // light kernel (aspect-corrected centered space) — tuned 2026-07-03: kernel center
-    // pushed off-frame right and low (1.46, -0.32) so only the hot skirt enters the frame;
-    // intensity 2.05 keeps the column blazing (sun-behind-fog, ref orange env)
-    uGlowPos:       { value: new THREE.Vector2(1.46, -0.32) },
-    uGlowRadius:    { value: 0.96 },
-    uGlowStretch:   { value: 0.85 },
-    uGlowIntensity: { value: 2.05 }, // written each frame from params (breathing)
+    // A single distant source just outside the upper-right frame. Its broad penumbra
+    // gives the smoke volume shape without washing the whole composition in light.
+    uGlowPos:       { value: new THREE.Vector2(...(light.position || [1.18, 0.12])) },
+    uGlowRadius:    { value: light.radius ?? 1.0 },
+    uGlowStretch:   { value: light.stretch ?? 1.1 },
+    uGlowIntensity: { value: light.intensity ?? 1.5 }, // written each frame from params (breathing)
     // one wind direction for the whole world (p-units / second)
     uWind: { value: new THREE.Vector2(0.016, -0.004) },
     // clocks / cursor — written once per frame in update()
@@ -44,8 +45,8 @@ export function initAtmosphereMedium({ palette } = {}) {
   };
 
   const params = {
-    glowIntensity: 2.05,  // rest intensity — GUI targets this, breathing modulates around it
-    breatheAmt:    0.135, // ±fraction of glow intensity (life pack)
+    glowIntensity: light.intensity ?? 1.5,
+    breatheAmt:    0.07,  // subtle life, avoiding visible brightness pulsing
   };
 
   return {
@@ -63,7 +64,7 @@ export function initAtmosphereMedium({ palette } = {}) {
       u.uGlowIntensity.value = params.glowIntensity * (1 + breathe * params.breatheAmt);
     },
 
-    // Crossfade the whole world to a new project palette — every consumer follows by reference.
+    // Crossfade the whole world to a project palette and lighting recipe.
     transition(palette, { duration = 1.2 } = {}) {
       const targets = { uBase: palette.base, uFog: palette.fog, uGlow: palette.glow, uSmoke: palette.smoke };
       for (const [name, hex] of Object.entries(targets)) {
@@ -71,6 +72,12 @@ export function initAtmosphereMedium({ palette } = {}) {
         gsap.killTweensOf(u[name].value);
         gsap.to(u[name].value, { r: c.r, g: c.g, b: c.b, duration, ease: 'sine.inOut' });
       }
+      const nextLight = palette.light || {};
+      const [x, y] = nextLight.position || [1.18, 0.12];
+      gsap.to(u.uGlowPos.value, { x, y, duration, ease: 'sine.inOut' });
+      gsap.to(u.uGlowRadius, { value: nextLight.radius ?? 1.0, duration, ease: 'sine.inOut' });
+      gsap.to(u.uGlowStretch, { value: nextLight.stretch ?? 1.1, duration, ease: 'sine.inOut' });
+      gsap.to(params, { glowIntensity: nextLight.intensity ?? 1.5, duration, ease: 'sine.inOut' });
     },
 
     destroy() {

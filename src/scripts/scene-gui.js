@@ -148,20 +148,16 @@ export function initSceneGui({ scene, renderer, bloomEffect, floor, projector, c
     at.add(u.uGlowPos.value, 'y', -1, 1, 0.01).name('glow pos y');
   }
 
-  // ── Fog veil (foreground haze over card/floor) ──
+  // ── Fog bank (mid-ground, behind card) ──
   if (fogVeil?.material) {
     const u = fogVeil.material.uniforms;
-    const fv = gui.addFolder('Fog veil');
+    const fv = gui.addFolder('Fog bank');
     fv.close();
     fv.add(fogVeil.mesh, 'visible').name('visible');
-    fv.add(u.uBottomStart, 'value', 0, 1, 0.01).name('bottom start');
-    fv.add(u.uBottomMax, 'value', 0, 1, 0.01).name('bottom max');
-    fv.add(u.uEdgeWidth, 'value', 0, 0.4, 0.005).name('edge width');
-    fv.add(u.uEdgeMax, 'value', 0, 1, 0.01).name('edge max');
-    fv.add(u.uVeilScale, 'value', 0.3, 4, 0.05).name('scale');
-    fv.add(u.uVeilSpeed, 'value', 0, 0.1, 0.001).name('speed');
-    fv.add(u.uNoiseFloor, 'value', 0, 1, 0.01).name('noise floor');
-    fv.add(u.uLightResponse, 'value', 0, 1, 0.01).name('light response');
+    fv.add(u.uBankDensity, 'value', 0, 1, 0.01).name('density');
+    fv.add(u.uBankLightGain, 'value', 0, 1, 0.01).name('light gain');
+    fv.add(u.uBankScale, 'value', 0.3, 4, 0.05).name('scale');
+    fv.add(u.uBankSpeed, 'value', 0, 0.1, 0.001).name('speed');
   }
 
   if (projector?.light) {

@@ -61,11 +61,22 @@ const ATMO_FRAG = /* glsl */`
   uniform float uSwirl, uSwirlScale, uSwirlSpeed;
   uniform float uGlowIntensity, uGlowEnergyGain, uGlowRadius, uGlowStretch, uGlowMouseShift;
   uniform vec2  uGlowPos;
+  uniform float uViewShift;
   uniform sampler2D uInk;
   varying vec2  vUv;
 
   ${NOISE_GLSL}
   ${LIGHT_KERNEL_GLSL}
+
+  // Seam-safe kernel: the dome's u wraps 0→1, so x-distance must wrap by the dome's
+  // u-period in p-units (|uDomScale.x|). Makes the kernel continuous across the UV seam
+  // and correct for ANY accumulated ring yaw (uViewShift can grow without bound).
+  float wrapKernel(vec2 p, vec2 gp, float radius, float stretch, float period){
+    vec2 gd = p - gp;
+    gd.x -= period * floor(gd.x / period + 0.5); // nearest periodic image
+    gd.y /= stretch;
+    return exp(-dot(gd, gd) / (radius * radius));
+  }
 
   #ifdef MOBILE
     #define FBM fbm3
@@ -81,14 +92,21 @@ const ATMO_FRAG = /* glsl */`
     // ── Shared light kernel, two lobes (ref: sun-behind-fog column at the frame edge) ──
     // broad soft skirt carries illumination across most of the frame; a tight hot core
     // pins the yellow-white kernel at the edge. Same shared center/radius uniforms.
-    vec2  gpos  = uGlowPos + uMouse * uGlowMouseShift;
-    float skirt = lightKernel(p, gpos, uGlowRadius, uGlowStretch);
-    float core  = lightKernel(p, gpos, uGlowRadius * uCoreSize, uGlowStretch * 0.8);
+    // uViewShift compensates the kernel for camera azimuth (ring navigation yaws the camera
+    // in place, panning the dome — and everything painted in p-space — across the frame):
+    // the LIGHT follows the camera so every project keeps the tuned composition, while the
+    // cloud domain below stays world-anchored and sweeps by naturally during a turn.
+    vec2  view  = vec2(uViewShift, 0.0);
+    vec2  gpos  = uGlowPos + view + uMouse * uGlowMouseShift;
+    float uPeriod = abs(uDomScale.x); // one full dome revolution in p-units
+    float skirt = wrapKernel(p, gpos, uGlowRadius, uGlowStretch, uPeriod);
+    float core  = wrapKernel(p, gpos, uGlowRadius * uCoreSize, uGlowStretch * 0.8, uPeriod);
     // Backlight pocket — a stationary bright fog patch directly behind the card (ref: the
     // brightest mid-frame fog sits behind the voxel wall, so the card and its fringe cubes
     // silhouette against brightness instead of floating in darkness). Rides p-space, so it
-    // shifts with camera parallax like something anchored in the world.
-    float pocket = lightKernel(p, uPocketPos, uPocketRadius, uPocketStretch);
+    // shifts with camera parallax like something anchored in the world; view-compensated so
+    // it stays behind whichever card the camera currently faces.
+    float pocket = wrapKernel(p, uPocketPos + view, uPocketRadius, uPocketStretch, uPeriod);
     float light = skirt + core * uCoreBoost + pocket * uPocketIntensity;
     float lit   = light * (uGlowIntensity + uEnergy * uGlowEnergyGain);
 
@@ -213,31 +231,31 @@ export function initAtmosphere({ medium, isMobile = false } = {}) {
       uResolution: { value: new THREE.Vector2(1920, 1080) },
       uAmbient:  { value: new THREE.Color(0xa79d99) }, // warm-neutral lit-fog tint
       // cloud layers (à la the reference's uShader1/2/3 {alpha,speed,scale}) — tuned 2026-07-03
-      uL1Alpha: { value: 1.0 },  uL1Speed: { value: 0.011 }, uL1Scale: { value: 1.8 },
-      uL2Alpha: { value: 0.18 }, uL2Scale: { value: 1.45 },
-      uL3Alpha: { value: 0.35 }, uL3Speed: { value: 0.05 },  uL3Scale: { value: 9.0 },
+      uL1Alpha: { value: 0.88 }, uL1Speed: { value: 0.011 }, uL1Scale: { value: 1.8 },
+      uL2Alpha: { value: 0.13 }, uL2Scale: { value: 1.45 },
+      uL3Alpha: { value: 0.24 }, uL3Speed: { value: 0.05 },  uL3Scale: { value: 9.0 },
       uL1Mix2:       { value: 1.0 },   // how much layer 1 gates layer 2
       uWarp:         { value: 2.2 },   // domain-warp strength (lower = creamier)
       uDensityGamma: { value: 0.9 },   // tonal carve of the summed density
-      uAbsorb:       { value: 5.55 },  // Beer-Lambert absorption through the mass
-      uCoreGain:     { value: 1.75 },  // near-white core strength
-      uAmbientAmt:   { value: 0.42 },
-      uScatterGain:   { value: 0.3 },  // in-scatter gain (Director "Scattering")
-      uHaloGain:      { value: 0.55 }, // direct halo gain (Director "Scattering")
-      uBackdropFloor: { value: 0.5 },  // ambient bed away from light (Director "Mood") — lifted: dim rust, never black
+      uAbsorb:       { value: 6.2 },   // denser air preserves shadow detail and separation
+      uCoreGain:     { value: 1.2 },
+      uAmbientAmt:   { value: 0.34 },
+      uScatterGain:   { value: 0.38 }, // bright environment supplies the broad illumination
+      uHaloGain:      { value: 0.52 },
+      uBackdropFloor: { value: 0.38 },
       // two-lobe kernel + temperature ramp (ref: hot yellow-white column at the frame edge)
-      uCoreSize:   { value: 0.5 },     // hot-core radius as a fraction of the skirt radius
-      uCoreBoost:  { value: 3.2 },     // hot-core strength added on top of the skirt
-      uHotColor:   { value: new THREE.Color(0xffd27a) }, // kernel-center temperature (never pure white)
+      uCoreSize:   { value: 0.42 },    // hot-core radius as a fraction of the skirt radius
+      uCoreBoost:  { value: 1.35 },    // a pin of warmth, not a blown-out sun
+      uHotColor:   { value: new THREE.Color(0xe7d7c5) }, // desaturated warm core
       // ceiling smoke lid — occludes the lit medium at the top of the frame
-      uLidDensity: { value: 0.95 },
+      uLidDensity: { value: 1.08 },
       uLidStart:   { value: 0.52 },    // screen-y where the lid begins to gather
       // backlight pocket — subtle bright fog patch behind the card, biased to the card's
       // dark (left) side so the fringe silhouettes without flattening the projector story
       uPocketPos:       { value: new THREE.Vector2(-0.32, 0.08) },
       uPocketRadius:    { value: 0.68 },
       uPocketStretch:   { value: 0.8 },  // wider than tall — matches the card's footprint
-      uPocketIntensity: { value: 0.32 },
+      uPocketIntensity: { value: 0.18 },
       // angular domain swirl — local curl of the cloud field (desktop only)
       uSwirl:      { value: 0.6 },   // max rotation (radians) across the angle field
       uSwirlScale: { value: 0.9 },   // spatial frequency of the angle field
@@ -246,6 +264,8 @@ export function initAtmosphere({ medium, isMobile = false } = {}) {
       uInkFog:       { value: 0.09 },  // fluid-dye trail → local fog thickening
       uGlowEnergyGain: { value: 0.0 },
       uGlowMouseShift: { value: 0.03 },
+      uViewShift:      { value: 0.0 }, // camera-azimuth compensation (p-units) — see setViewYaw
+
       uInk: { value: flatInk }, // fluid dye — swapped in via setInk
     },
   });
@@ -276,6 +296,14 @@ export function initAtmosphere({ medium, isMobile = false } = {}) {
     },
 
     setInk(uniform) { material.uniforms.uInk = uniform; }, // adopt the live { value } dye object
+
+    // Keep the light kernel (and pocket) framed at the camera's current ring azimuth.
+    // Yawing by θ pans the dome's viewed UV window by θ/2π of u (three's polyhedron
+    // azimuth convention); × uDomScale.x converts that to p-units, giving the offset the
+    // kernel centers need so the composition stays put on screen. Called every frame.
+    setViewYaw(azimuth) {
+      u.uViewShift.value = (azimuth / (Math.PI * 2)) * u.uDomScale.value.x;
+    },
 
     destroy() {
       geometry.dispose();
