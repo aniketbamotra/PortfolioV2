@@ -33,7 +33,7 @@ npm run preview
 ## Repo map
 
 ```
-src/pages/            index.astro (hero), about.astro, work/index.astro
+src/pages/            index.astro (hero), about.astro, work/index.astro, work/[id].astro (case studies)
 src/components/       Nav, BottomBar, ProjectIndicators, ProjectMeta, WorkEntry(-Small)
 src/styles/           global/home/nav/about/work.css — imported, not linked
 src/data/projects.js  content model (see "Data model")

@@ -45,15 +45,19 @@ const minorProjects = ALL_PROJECTS.filter(p => !p.hasCaseStudy);
       ))}
     </div>
 
-    <div class="work-section-divider">
-      <span class="work-section-label">More work</span>
-    </div>
+    {minorProjects.length > 0 && (
+      <>
+        <div class="work-section-divider">
+          <span class="work-section-label">More work</span>
+        </div>
 
-    <div class="work-entries">
-      {minorProjects.map((project, i) => (
-        <WorkEntrySmall project={project} index={majorProjects.length + i + 1} />
-      ))}
-    </div>
+        <div class="work-entries">
+          {minorProjects.map((project, i) => (
+            <WorkEntrySmall project={project} index={majorProjects.length + i + 1} />
+          ))}
+        </div>
+      </>
+    )}
 
     <footer class="work-footer">
       <span class="work-footer-text">Aniket Bamotra · {new Date().getFullYear()}</span>

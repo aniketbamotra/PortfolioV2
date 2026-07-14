@@ -1,0 +1,175 @@
+---
+// Case-study pages — one static route per project with case-study content
+// (/work/keploy, /work/gemx, /work/demand-climate-justice).
+// All copy is DUMMY placeholder from projects.js caseStudy — replace there, not here.
+// Static content only, nothing animates (matches about.astro).
+// Each page carries its project's envAccent as --cs-acc (kicker, metrics, hovers);
+// this is page chrome, not the 3D world — the hue-in-world rule governs the hero scene.
+import Nav from '../../components/Nav.astro';
+import { PROJECTS } from '../../data/projects.js';
+import '../../styles/global.css';
+import '../../styles/case-study.css';
+import '../../styles/nav.css';
+
+export function getStaticPaths() {
+  return PROJECTS
+    .filter(p => p.hasCaseStudy && p.caseStudy?.headline)
+    .map(p => ({ params: { id: p.id }, props: { project: p } }));
+}
+
+const { project } = Astro.props;
+const cs = project.caseStudy;
+
+// prev/next cycle through the case-study set only, in PROJECTS (impact) order
+const caseStudies = PROJECTS.filter(p => p.hasCaseStudy && p.caseStudy?.headline);
+const csIndex = caseStudies.indexOf(project);
+const indexStr = String(csIndex + 1).padStart(2, '0');
+const prevProject = caseStudies[(csIndex - 1 + caseStudies.length) % caseStudies.length];
+const nextProject = caseStudies[(csIndex + 1) % caseStudies.length];
+---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{project.title} — Case Study — Aniket Bamotra</title>
+  <meta name="description" content={cs.headline} />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+</head>
+<body>
+  <div id="curtain"></div>
+  <Nav />
+
+  <div id="case-study" class="view active" style={`--cs-acc: ${project.envAccent}`}>
+    <article class="cs-inner">
+
+      <!-- ── Hero ─────────────────────────────── -->
+      <header class="cs-hero">
+        <div class="cs-breadcrumb">
+          <a href="/work" class="cs-breadcrumb-link">Work</a>
+          <span class="cs-breadcrumb-sep">/</span>
+          <span class="cs-breadcrumb-current">Case Study {indexStr}</span>
+        </div>
+        <h1 class="cs-title">{project.title}</h1>
+        <p class="cs-headline">{cs.headline}</p>
+      </header>
+
+      <!-- ── Meta grid ────────────────────────── -->
+      <div class="cs-meta">
+        <div class="cs-meta-item">
+          <span class="cs-meta-label">Role</span>
+          <span class="cs-meta-value">{project.role}</span>
+        </div>
+        <div class="cs-meta-item">
+          <span class="cs-meta-label">Timeline</span>
+          <span class="cs-meta-value">{cs.timeline}</span>
+        </div>
+        <div class="cs-meta-item">
+          <span class="cs-meta-label">Client</span>
+          <span class="cs-meta-value">{project.client}</span>
+        </div>
+        <div class="cs-meta-item">
+          <span class="cs-meta-label">Team</span>
+          <span class="cs-meta-value">{cs.team}</span>
+        </div>
+        <div class="cs-meta-item">
+          <span class="cs-meta-label">Scope</span>
+          <span class="cs-meta-value">{cs.scope.join(' · ')}</span>
+        </div>
+        <div class="cs-meta-item">
+          <span class="cs-meta-label">Stack</span>
+          <div class="cs-meta-tags">
+            {cs.stack.map(item => <span class="cs-tag">{item}</span>)}
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Cover ────────────────────────────── -->
+      <figure class="cs-cover">
+        <img src={project.coverImage} alt={`${project.title} — cover`} />
+      </figure>
+
+      <!-- ── Overview ─────────────────────────── -->
+      <section class="cs-section">
+        <div class="cs-section-head">
+          <span class="cs-kicker">Overview</span>
+        </div>
+        <div class="cs-section-body">
+          <p class="cs-lede">{cs.overview}</p>
+        </div>
+      </section>
+
+      <!-- ── Challenge ────────────────────────── -->
+      <section class="cs-section">
+        <div class="cs-section-head">
+          <span class="cs-kicker">The challenge</span>
+        </div>
+        <div class="cs-section-body">
+          {cs.challenge.map(para => <p>{para}</p>)}
+        </div>
+      </section>
+
+      <!-- ── Process sections ─────────────────── -->
+      {cs.sections.map(section => (
+        <section class="cs-section">
+          <div class="cs-section-head">
+            <span class="cs-kicker">{section.kicker}</span>
+          </div>
+          <div class="cs-section-body">
+            <h2 class="cs-section-title">{section.title}</h2>
+            {section.paragraphs.map(para => <p>{para}</p>)}
+            {section.code && (
+              <div class="cs-code">
+                <span class="cs-code-label">{section.code.label}</span>
+                <pre><code>{section.code.source}</code></pre>
+              </div>
+            )}
+            {section.figure && (
+              <figure class="cs-figure">
+                <span class="cs-figure-label">{section.figure.label}</span>
+              </figure>
+            )}
+          </div>
+        </section>
+      ))}
+
+      <!-- ── Outcome ──────────────────────────── -->
+      <section class="cs-section">
+        <div class="cs-section-head">
+          <span class="cs-kicker">Outcome</span>
+        </div>
+        <div class="cs-section-body">
+          {cs.outcome.paragraphs.map(para => <p>{para}</p>)}
+          <dl class="cs-metrics">
+            {cs.outcome.metrics.map(metric => (
+              <div class="cs-metric">
+                <dd class="cs-metric-value">{metric.value}</dd>
+                <dt class="cs-metric-label">{metric.label}</dt>
+                <span class="cs-metric-note">{metric.note}</span>
+              </div>
+            ))}
+          </dl>
+        </div>
+      </section>
+
+      <!-- ── Footer nav — prev / all / next ───── -->
+      <footer class="cs-footer">
+        <a href={`/work/${prevProject.id}`} class="cs-footer-link">
+          <span class="cs-footer-label"><span class="cs-footer-arrow">&#8598;</span> Previous</span>
+          <span class="cs-footer-title">{prevProject.title}</span>
+        </a>
+        <a href="/work" class="cs-footer-link cs-footer-all">
+          <span class="cs-footer-label">Index</span>
+          <span class="cs-footer-title">All Work</span>
+        </a>
+        <a href={`/work/${nextProject.id}`} class="cs-footer-link cs-footer-next">
+          <span class="cs-footer-label">Next <span class="cs-footer-arrow">&#8599;</span></span>
+          <span class="cs-footer-title">{nextProject.title}</span>
+        </a>
+      </footer>
+
+    </article>
+  </div>
+</body>
+</html>

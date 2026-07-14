@@ -10,16 +10,28 @@ interface Props {
 
 const { project, index } = Astro.props;
 const indexStr = String(index).padStart(2, '0');
+// Case-study pages are standalone documents (pages/work/<id>.astro), so this is a real
+// anchor, not a goto() view swap — goto() only toggles views within the current page.
+// headline check = the case-study content (and thus its route) actually exists yet.
+const caseStudyUrl = project.hasCaseStudy && project.caseStudy?.headline
+  ? `/work/${project.id}`
+  : null;
+const Wrapper = caseStudyUrl ? 'a' : 'article';
 ---
 
-<article class="work-entry">
-  <div class="we-index">{indexStr}</div>
+<Wrapper class="work-entry" href={caseStudyUrl}>
+  <div class="we-index">
+    <span>{indexStr}</span>
+    <span class="we-index-year">{project.year}</span>
+  </div>
 
   <div class="we-left">
     <div>
       <div class="we-type-row">
         <span class="we-type-dot"></span>
         <span class="we-type-label">{project.accentTag}</span>
+        <span class="we-type-sep"></span>
+        <span class="we-type-label">{project.role}</span>
       </div>
       <h2 class="we-title">{project.title}</h2>
       <p class="we-desc">{project.longDesc}</p>
@@ -32,7 +44,7 @@ const indexStr = String(index).padStart(2, '0');
     </div>
 
     <div class="we-cta">
-      {project.hasCaseStudy ? (
+      {caseStudyUrl ? (
         <>Case Study <span class="we-cta-arrow">&#8599;</span></>
       ) : project.liveUrl ? (
         <>View Live <span class="we-cta-arrow">&#8599;</span></>
@@ -53,4 +65,4 @@ const indexStr = String(index).padStart(2, '0');
       )}
     </div>
   </div>
-</article>
+</Wrapper>
