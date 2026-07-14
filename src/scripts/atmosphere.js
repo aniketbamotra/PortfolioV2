@@ -119,15 +119,22 @@ const ATMO_FRAG = /* glsl */`
     // ── Density field: three layers riding the shared wind with depth parallax ──
     // (per-layer wind factors; small private speeds add internal churn; ev evolves the warp
     //  offsets so plumes change SHAPE, not just translate — the anti-"sliding texture" clock)
-    // Angular swirl (desktop): the sampling domain rotates by a breathing angle FIELD, so
-    // smoke masses curl and fold locally (differential rotation) instead of panning in
-    // formation. The light kernel reads the unrotated p — only the weather swirls.
+    // Local eddies (desktop): 2D curl noise — displace each point ALONG the contour lines
+    // of a slow scalar field (velocity = rotated gradient, divergence-free), giving many
+    // small closed circulation cells. Eddy size is set purely by uSwirlScale, independent
+    // of screen position. (The old version rotated the whole domain about the p-space
+    // ORIGIN — twist displacement grew with distance from screen centre, so single swirls
+    // arced frame-high from the floor to the zenith and marbled the horizon/reflection.)
+    // The light kernel reads the undisplaced p — only the weather swirls.
     #ifdef MOBILE
       vec2 pd = p;
     #else
-      float ang = (FBM(p * uSwirlScale - uTime * uSwirlSpeed) - 0.5) * uSwirl;
-      float ca = cos(ang), sa = sin(ang);
-      vec2 pd = mat2(ca, -sa, sa, ca) * p;
+      const float SW_EPS = 0.08; // gradient probe span (sp-units) — softens the finest curl
+      vec2 sp = p * uSwirlScale - uTime * uSwirlSpeed;
+      float sw0 = FBM(sp);
+      vec2 curl = vec2(FBM(sp + vec2(0.0, SW_EPS)) - sw0,
+                       sw0 - FBM(sp + vec2(SW_EPS, 0.0))) / SW_EPS;
+      vec2 pd = p + curl * uSwirl;
     #endif
     float ev = uTime * 0.025;
     float t1 = uTime * uL1Speed * 0.5;
@@ -226,40 +233,41 @@ export function initAtmosphere({ medium, isMobile = false } = {}) {
       // (sunk -12.65, rotated -72°) and three's polyhedron UV convention (u = azimuth of
       // (z,-x), v = inclination of -y) — both axes run OPPOSITE to screen, hence negative
       // scales. Retunable in GUI.
-      uDomCenter:  { value: new THREE.Vector2(0.45, 0.487) },
-      uDomScale:   { value: new THREE.Vector2(-7.45, -3.27) },
+      uDomCenter:  { value: new THREE.Vector2(0.415, 0.465) },
+      uDomScale:   { value: new THREE.Vector2(-6.4, -4.0) },
       uResolution: { value: new THREE.Vector2(1920, 1080) },
       uAmbient:  { value: new THREE.Color(0xa79d99) }, // warm-neutral lit-fog tint
-      // cloud layers (à la the reference's uShader1/2/3 {alpha,speed,scale}) — tuned 2026-07-03
-      uL1Alpha: { value: 0.88 }, uL1Speed: { value: 0.011 }, uL1Scale: { value: 1.8 },
-      uL2Alpha: { value: 0.13 }, uL2Scale: { value: 1.45 },
-      uL3Alpha: { value: 0.24 }, uL3Speed: { value: 0.05 },  uL3Scale: { value: 9.0 },
+      // cloud layers (à la the reference's uShader1/2/3 {alpha,speed,scale}) — retuned
+      // 2026-07-14 (curl-eddy pass: L3 detail now carries the body, L1 plumes accent)
+      uL1Alpha: { value: 0.13 }, uL1Speed: { value: 0.033 }, uL1Scale: { value: 1.27 },
+      uL2Alpha: { value: 0.66 }, uL2Scale: { value: 2.75 },
+      uL3Alpha: { value: 1.46 }, uL3Speed: { value: 0.155 }, uL3Scale: { value: 4.3 },
       uL1Mix2:       { value: 1.0 },   // how much layer 1 gates layer 2
-      uWarp:         { value: 2.2 },   // domain-warp strength (lower = creamier)
+      uWarp:         { value: 0.1 },   // domain-warp strength (lower = creamier)
       uDensityGamma: { value: 0.9 },   // tonal carve of the summed density
-      uAbsorb:       { value: 6.2 },   // denser air preserves shadow detail and separation
-      uCoreGain:     { value: 1.2 },
-      uAmbientAmt:   { value: 0.34 },
+      uAbsorb:       { value: 3.8 },   // denser air preserves shadow detail and separation
+      uCoreGain:     { value: 1.8 },
+      uAmbientAmt:   { value: 0.2 },
       uScatterGain:   { value: 0.38 }, // bright environment supplies the broad illumination
-      uHaloGain:      { value: 0.52 },
-      uBackdropFloor: { value: 0.38 },
+      uHaloGain:      { value: 1.21 },
+      uBackdropFloor: { value: 0.17 },
       // two-lobe kernel + temperature ramp (ref: hot yellow-white column at the frame edge)
       uCoreSize:   { value: 0.42 },    // hot-core radius as a fraction of the skirt radius
-      uCoreBoost:  { value: 1.35 },    // a pin of warmth, not a blown-out sun
+      uCoreBoost:  { value: 2.4 },     // a pin of warmth, not a blown-out sun
       uHotColor:   { value: new THREE.Color(0xe7d7c5) }, // desaturated warm core
       // ceiling smoke lid — occludes the lit medium at the top of the frame
-      uLidDensity: { value: 1.08 },
-      uLidStart:   { value: 0.52 },    // screen-y where the lid begins to gather
+      uLidDensity: { value: 0.26 },
+      uLidStart:   { value: 0.35 },    // screen-y where the lid begins to gather
       // backlight pocket — subtle bright fog patch behind the card, biased to the card's
       // dark (left) side so the fringe silhouettes without flattening the projector story
-      uPocketPos:       { value: new THREE.Vector2(-0.32, 0.08) },
-      uPocketRadius:    { value: 0.68 },
-      uPocketStretch:   { value: 0.8 },  // wider than tall — matches the card's footprint
-      uPocketIntensity: { value: 0.18 },
-      // angular domain swirl — local curl of the cloud field (desktop only)
-      uSwirl:      { value: 0.6 },   // max rotation (radians) across the angle field
-      uSwirlScale: { value: 0.9 },   // spatial frequency of the angle field
-      uSwirlSpeed: { value: 0.02 },  // how fast the curl pattern itself breathes
+      uPocketPos:       { value: new THREE.Vector2(-0.27, 0.08) },
+      uPocketRadius:    { value: 0.81 },
+      uPocketStretch:   { value: 0.65 }, // wider than tall — matches the card's footprint
+      uPocketIntensity: { value: 0.46 },
+      // curl-noise eddies — local circulation of the cloud field (desktop only)
+      uSwirl:      { value: 0.135 }, // displacement amplitude (p-units) along the curl
+      uSwirlScale: { value: 1.6 },   // eddy frequency — HIGHER = smaller swirl circles
+      uSwirlSpeed: { value: 0.015 }, // how fast the eddy pattern itself drifts/breathes
       uEnergyGain:   { value: 0.7 },   // cursor energy → layer-3 detail boost
       uInkFog:       { value: 0.09 },  // fluid-dye trail → local fog thickening
       uGlowEnergyGain: { value: 0.0 },

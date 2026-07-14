@@ -165,12 +165,13 @@ export function initReflectiveFloor({ scene, accent, renderer, medium } = {}) {
         textureMatrix: { value: null },        // set by Reflector
         tNormalMap:    { value: flatNormal },  // swapped for the loaded texture below
         uInk:          { value: flatInk },     // fluid dye — swapped in via setInk
-        // Reflectivity 0.05 (raised 2026-07-03 from 0): a whisper of reflection at all
-        // angles on top of the grazing fresnel sheen — wet stone, still not a mirror.
-        uReflectivity:     { value: 0.035 },
+        // Reflectivity 0.29 (retuned 2026-07-14, was 0.035): a clear all-angle reflection
+        // bed under the fresnel sheen — the heavier normal distortion below keeps it from
+        // reading as chrome.
+        uReflectivity:     { value: 0.29 },
         uMirror:           { value: 0.88 },    // broad, blurred environmental reflection
         uFloorMixStrength: { value: 4.2 },     // bright atmosphere reads in the plane without chrome
-        uDist:             { value: 1.6 },     // normal distortion strength
+        uDist:             { value: 4.6 },     // normal distortion strength (retuned 2026-07-14)
         uNormalScale:      { value: new THREE.Vector2(1.6, 1.6) },
         uRadius:           { value: 23 },
         uInkWarp:          { value: 0.0 },     // cursor-ink reflection nudge (off, tuned 2026-07-03)
@@ -188,16 +189,17 @@ export function initReflectiveFloor({ scene, accent, renderer, medium } = {}) {
         uContactDark: { value: 0.0 },   // contact shadow under the card (GUI-restorable)
         uFogCol:    { value: new THREE.Color(0xf2ddc2) }, // placeholder — medium adopted below
         // live waves — scrolling dual normal maps (surface + reflection move together);
-        // amp saturates the water blend at 0.025, speed 1 ≈ one texture repeat / ~35 s
+        // amp saturates the water blend at 0.025. Retuned 2026-07-14: finer, near-still
+        // ripple (scale 4 / speed 0.12) — a breathing surface, not flowing water.
         uWaveAmp:   { value: 0.025 },
-        uWaveScale: { value: 1.2 },
-        uWaveSpeed: { value: 1.5 },
-        // ground mist banks flanking the card
-        uMistAmt:   { value: 0.32 },
-        uMistInner: { value: 3.5 },
-        uMistOuter: { value: 11.0 },
-        uMistFloor:     { value: 0.3 },  // min bank density — thins, never vanishes
-        uMistLeftBoost: { value: 1.4 },  // dark-side equalizer
+        uWaveScale: { value: 4.0 },
+        uWaveSpeed: { value: 0.12 },
+        // ground mist banks flanking the card (retuned 2026-07-14 — denser, pushed outward)
+        uMistAmt:   { value: 0.83 },
+        uMistInner: { value: 5.5 },
+        uMistOuter: { value: 10.0 },
+        uMistFloor:     { value: 0.17 }, // min bank density — thins, never vanishes
+        uMistLeftBoost: { value: 0.5 },  // dark-side sits QUIETER than the lit side now
       },
       vertexShader: FLOOR_VERT,
       fragmentShader: FLOOR_FRAG,

@@ -128,8 +128,8 @@ export function initSceneGui({ scene, renderer, bloomEffect, floor, projector, c
     at.add(u.uDomCenter.value, 'y', 0, 1, 0.005).name('dome center v');
     at.add(u.uDomScale.value, 'x', -16, 16, 0.05).name('dome scale u');
     at.add(u.uDomScale.value, 'y', -8, 8, 0.05).name('dome scale v');
-    at.add(u.uSwirl, 'value', 0, 2, 0.01).name('swirl amount');
-    at.add(u.uSwirlScale, 'value', 0.2, 3, 0.05).name('swirl scale');
+    at.add(u.uSwirl, 'value', 0, 0.6, 0.005).name('swirl amount');
+    at.add(u.uSwirlScale, 'value', 0.5, 8, 0.05).name('swirl size (freq)');
     at.add(u.uSwirlSpeed, 'value', 0, 0.1, 0.001).name('swirl speed');
     at.add(u.uGlowRadius, 'value', 0.05, 2, 0.01).name('glow radius');
     at.add(u.uCoreSize, 'value', 0.05, 1, 0.01).name('core size (frac)');
@@ -155,9 +155,29 @@ export function initSceneGui({ scene, renderer, bloomEffect, floor, projector, c
     fv.close();
     fv.add(fogVeil.mesh, 'visible').name('visible');
     fv.add(u.uBankDensity, 'value', 0, 1, 0.01).name('density');
+    fv.add(u.uBankFloor, 'value', 0, 1, 0.01).name('thickness floor');
+    fv.add(u.uBankTop, 'value', 0.2, 1, 0.01).name('height (top edge)');
+    fv.add(u.uBankTopFeather, 'value', 0.02, 0.6, 0.01).name('top feather');
     fv.add(u.uBankLightGain, 'value', 0, 1, 0.01).name('light gain');
     fv.add(u.uBankScale, 'value', 0.3, 4, 0.05).name('scale');
     fv.add(u.uBankSpeed, 'value', 0, 0.1, 0.001).name('speed');
+    fv.add(u.uBoil, 'value', 0, 0.15, 0.001).name('boil (forming)');
+    fv.add(u.uEdgeAmp, 'value', 0, 0.5, 0.01).name('edge lumpiness');
+    fv.add(u.uEdgeScale, 'value', 0.2, 4, 0.05).name('edge crest scale');
+    fv.add(u.uEdgeSpeed, 'value', 0, 0.3, 0.005).name('edge swell speed');
+    if (fogVeil.materialRear) {
+      const ur = fogVeil.materialRear.uniforms;
+      fv.add(ur.uBankDensity, 'value', 0, 1, 0.01).name('rear density');
+      fv.add(ur.uBankFloor, 'value', 0, 1, 0.01).name('rear thickness floor');
+      fv.add(ur.uBankTop, 'value', 0.2, 1, 0.01).name('rear height (top)');
+      fv.add(ur.uBankTopFeather, 'value', 0.02, 0.6, 0.01).name('rear top feather');
+      fv.add(ur.uBankLightGain, 'value', 0, 1, 0.01).name('rear light gain');
+      fv.add(ur.uBankScale, 'value', 0.3, 4, 0.05).name('rear scale');
+      fv.add(ur.uBoil, 'value', 0, 0.15, 0.001).name('rear boil');
+      fv.add(ur.uEdgeAmp, 'value', 0, 0.5, 0.01).name('rear edge lumpiness');
+      fv.add(ur.uEdgeScale, 'value', 0.2, 4, 0.05).name('rear edge crest scale');
+      fv.add(ur.uEdgeSpeed, 'value', 0, 0.3, 0.005).name('rear edge swell speed');
+    }
   }
 
   if (projector?.light) {

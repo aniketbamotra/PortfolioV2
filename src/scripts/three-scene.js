@@ -283,7 +283,7 @@ export function initScene(canvas) {
   camera.lookAt(0, 0, 0);
 
   // Post-processing — bloom + vignette, plus DOF + chromatic aberration (cinematic).
-  bloomEffect = new BloomEffect({ intensity: 0.78, luminanceThreshold: 0.48, luminanceSmoothing: 0.78, mipmapBlur: true, radius: 0.42 });
+  bloomEffect = new BloomEffect({ intensity: 0.53, luminanceThreshold: 0.48, luminanceSmoothing: 0.78, mipmapBlur: true, radius: 0.42 });
   const vignetteEffect = new VignetteEffect({ darkness: 0.58, offset: 0.12 });
   // Film grain — OVERLAY keeps grain visible in shadows (SCREEN only lifts; premultiplied
   // grain vanishes in a mostly-dark frame). Tuned 2026-07-03: ON, opacity 0.32 — the film

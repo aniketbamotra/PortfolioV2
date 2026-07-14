@@ -1,7 +1,9 @@
-// Mid-ground fog bank — a real world-space layer positioned behind the voxel wall. Unlike a
-// full-screen veil, the card depth-tests in front of it: smoke remains bright through the
-// broken silhouette while its front faces stay crisp. This is the light-catching volume between
-// the dark reflector and the distant sky.
+// Mid-ground fog bank — TWO real world-space planes behind the voxel wall (front bank +
+// a broader rear bank ~1.2 further back). Unlike a full-screen veil, the card depth-tests
+// in front of both: smoke remains bright through the broken silhouette while its front
+// faces stay crisp. Two staggered layers stack alpha (the dome's curls can't read through
+// the pair) and shear past each other with camera parallax, which one plane can't do.
+// This is the light-catching volume between the dark reflector and the distant sky.
 
 import * as THREE from 'three';
 import { NOISE_GLSL } from './shaders/noise-glsl.js';
@@ -18,6 +20,9 @@ const BANK_FRAG = /* glsl */`
   uniform vec2 uGlowPos;
   uniform float uGlowRadius, uGlowStretch, uGlowIntensity;
   uniform float uBankScale, uBankSpeed, uBankDensity, uBankLightGain;
+  uniform float uBankFloor, uBankTop, uBankTopFeather;
+  uniform float uBoil, uEdgeAmp, uEdgeScale, uEdgeSpeed;
+  uniform vec2  uPExtent, uSeed;
   varying vec2 vUv;
   ${NOISE_GLSL}
   ${LIGHT_KERNEL_GLSL}
@@ -27,14 +32,29 @@ const BANK_FRAG = /* glsl */`
     #define FBM fbm4
   #endif
   void main(){
-    vec2 p = (vUv - 0.5) * vec2(3.9, 1.0);
+    vec2 p = (vUv - 0.5) * uPExtent;
     float t = uTime * uBankSpeed;
-    vec2 flow = p + uWind * uTime * 1.6 + vec2(11.7, 3.1);
-    vec2 warp = vec2(FBM(flow * uBankScale + vec2(t, 0.0)), FBM(flow * uBankScale + vec2(4.6, 1.2) - t));
-    float density = FBM(flow * uBankScale + warp * 1.5 + vec2(t * 0.4, 0.0));
+    // Form clock — evolves the WARP offsets (not the sample position), so fog masses
+    // morph/condense/dissolve in place instead of translating. Same anti-"sliding
+    // texture" trick as the dome's ev clock.
+    float ev = uTime * uBoil;
+    vec2 flow = p + uWind * uTime * 1.6 + uSeed;
+    vec2 warp = vec2(FBM(flow * uBankScale + vec2(t, ev)),
+                     FBM(flow * uBankScale + vec2(4.6, 1.2) - t - vec2(0.0, ev * 0.7)));
+    float density = FBM(flow * uBankScale + warp * 1.5 + vec2(t * 0.4, ev * 0.3));
     density = smoothstep(0.23, 0.93, density);
+    // Thickness floor — low pockets of the field THIN the bank but never open a hole
+    // (same trick as the ground mist's uMistFloor), so the wall of fog stays continuous.
+    density = uBankFloor + (1.0 - uBankFloor) * density;
     float horizontal = smoothstep(0.0, 0.16, vUv.x) * smoothstep(0.0, 0.16, 1.0 - vUv.x);
-    float vertical = smoothstep(0.0, 0.22, vUv.y) * smoothstep(0.0, 0.22, 1.0 - vUv.y);
+    // Bottom feather is fixed; the TOP edge is authored: the bank dissolves into the sky
+    // across uBankTopFeather ending at a LUMPY skyline — uBankTop is modulated per-column
+    // by a noise crest whose second axis is TIME, so crests swell and sink in place
+    // (forming, not blowing sideways). Kills the straight rectangle edge.
+    float crest = FBM(vec2(p.x * uEdgeScale, uTime * uEdgeSpeed) + uSeed);
+    float topEdge = uBankTop + (crest - 0.5) * uEdgeAmp;
+    float vertical = smoothstep(0.0, 0.14, vUv.y)
+                   * (1.0 - smoothstep(topEdge - uBankTopFeather, topEdge, vUv.y));
     vec2 lightP = vec2(p.x * 0.52, p.y);
     float light = lightKernel(lightP, uGlowPos, uGlowRadius, uGlowStretch);
     float alpha = density * horizontal * vertical * uBankDensity * mix(0.55, 1.0, light);
@@ -44,8 +64,28 @@ const BANK_FRAG = /* glsl */`
     gl_FragColor = vec4(col, alpha);
   }`;
 
+// Plane heights (world units). Both reach past the top of the frame at the seat, so each
+// bank's visible height is controlled purely by its uBankTop shader fade, not geometry.
+// The original authored plane was 18×3.7; geometry is translated UP so the bottom edge
+// stays at that original line and _seatFogPlanes' y offset keeps working unchanged.
+const FRONT_H = 6.0;
+const REAR_H  = 8.0;
+// p-per-world-unit of the ORIGINAL 18×3.7 ↔ ±(1.95, 0.5)-p mapping (slightly anisotropic,
+// part of the tuned look) — keeps the noise character identical per world unit on any
+// plane size.
+const P_PER_WORLD_X = 3.9 / 18;
+const P_PER_WORLD_Y = 1.0 / 3.7;
+
+function makeBankGeometry(width, height) {
+  const g = new THREE.PlaneGeometry(width, height);
+  g.translate(0, (height - 3.7) / 2, 0);
+  return g;
+}
+
 export function initFogVeil({ medium, isMobile = false } = {}) {
-  const material = new THREE.ShaderMaterial({
+  // Shared medium uniforms are adopted BY REFERENCE per material; `owned` carries each
+  // bank's private tuning (never call material.clone() — it deep-copies the shared refs).
+  const makeMaterial = (owned) => new THREE.ShaderMaterial({
     transparent: true, depthTest: true, depthWrite: false, fog: false,
     vertexShader: BANK_VERT, fragmentShader: BANK_FRAG,
     defines: isMobile ? { MOBILE: '' } : {},
@@ -54,14 +94,63 @@ export function initFogVeil({ medium, isMobile = false } = {}) {
       uGlowPos: medium.u.uGlowPos, uGlowRadius: medium.u.uGlowRadius,
       uGlowStretch: medium.u.uGlowStretch, uGlowIntensity: medium.u.uGlowIntensity,
       uWind: medium.u.uWind, uTime: medium.u.uTime,
-      uBankScale: { value: 1.55 }, uBankSpeed: { value: 0.045 },
-      uBankDensity: { value: isMobile ? 0.34 : 0.46 }, uBankLightGain: { value: 0.36 },
+      ...Object.fromEntries(Object.entries(owned).map(([k, v]) => [k, { value: v }])),
     },
   });
-  const geometry = new THREE.PlaneGeometry(18, 3.7);
-  const mesh = new THREE.Mesh(geometry, material);
+
+  // Front bank — retuned 2026-07-14 (boil pass): fast-forming fine field, thin floor —
+  // the REAR bank now carries the occlusion, the front carries the visible churn.
+  const material = makeMaterial({
+    uBankScale: 4.0, uBankSpeed: 0.078,
+    uBankDensity: isMobile ? 0.74 : 1.0, uBankLightGain: 0.86,
+    uBankFloor: 0.19,       // min density — the bank thins but never breaks open
+    uBankTop: 0.72,         // plane-uv where the bank's top edge fully dissolves
+    uBankTopFeather: 0.17,  // width of that dissolve band
+    uBoil: 0.15,            // form clock — fog condenses/dissolves in place
+    uEdgeAmp: 0.19,         // skyline lumpiness (plane-uv) — 0 = straight edge
+    uEdgeScale: 0.55,       // crest frequency along x — higher = more, smaller crests
+    uEdgeSpeed: 0.255,      // how fast crests swell and sink
+    uPExtent: new THREE.Vector2(18 * P_PER_WORLD_X, FRONT_H * P_PER_WORLD_Y),
+    uSeed: new THREE.Vector2(11.7, 3.1),
+  });
+  const frontGeo = makeBankGeometry(18, FRONT_H);
+  const front = new THREE.Mesh(frontGeo, material);
+  front.renderOrder = -0.5; // after floor and rear bank, before the voxel wall
+  front.frustumCulled = false;
+
+  // Rear bank — broader, dimmer masses ~1.2 behind the front bank. Its own seed decorrelates
+  // the two fields; stacked alpha is what finally occludes the dome, and the slight depth
+  // gap gives the pair real parallax shear during camera moves.
+  const materialRear = makeMaterial({
+    uBankScale: 2.4, uBankSpeed: 0.005,
+    uBankDensity: isMobile ? 0.74 : 1.0, uBankLightGain: 0.6,
+    uBankFloor: 0.39,
+    uBankTop: 0.66,         // sits BELOW the front bank's edge — front crests read against sky
+    uBankTopFeather: 0.26,
+    uBoil: 0.089,           // rear masses form slower — deeper air feels heavier
+    uEdgeAmp: 0.37,         // big lazy rear crests behind the front bank's faster ones
+    uEdgeScale: 0.5,
+    uEdgeSpeed: 0.135,
+    uPExtent: new THREE.Vector2(26 * P_PER_WORLD_X, REAR_H * P_PER_WORLD_Y),
+    uSeed: new THREE.Vector2(37.2, 17.9),
+  });
+  const rearGeo = makeBankGeometry(26, REAR_H);
+  const rear = new THREE.Mesh(rearGeo, materialRear);
+  rear.position.z = -1.2;   // local: further from the camera than the front bank
+  rear.renderOrder = -0.6;  // farther plane draws first for correct alpha stacking
+  rear.frustumCulled = false;
+
+  // One group = one seat: _seatFogPlanes positions/rotates this as a unit per wall.
+  const mesh = new THREE.Group();
+  mesh.add(rear, front);
   mesh.position.set(0, 0.12, -1.15); // behind the active wall at z=0
-  mesh.renderOrder = -0.5; // after floor, before the voxel wall
-  mesh.frustumCulled = false;
-  return { mesh, material, update() {}, destroy() { geometry.dispose(); material.dispose(); } };
+
+  return {
+    mesh, material, materialRear,
+    update() {},
+    destroy() {
+      frontGeo.dispose(); rearGeo.dispose();
+      material.dispose(); materialRear.dispose();
+    },
+  };
 }
