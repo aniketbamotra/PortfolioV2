@@ -26,7 +26,7 @@ export const PROJECTS = [
     // few degrees (#a8522e/#e78b40/#eed9c4), left untouched as the calibration anchor.
     atmo: { base: '#0b1020', fog: '#b8c8e3', glow: '#82adff', smoke: '#2b3e66', light: { position: [1.16, 0.12], radius: 1.04, stretch: 1.12, intensity: 1.58 } },
     shaderType: 'token-grid',
-    coverImage: '/assets/projects/keploy.png',
+    coverImage: '/assets/projects/keploy.webp',
     // Case-study content is DUMMY placeholder copy (plausible, technical-audience tone)
     // rendered by pages/work/keploy.astro. Replace with real text when available.
     caseStudy: {
@@ -161,7 +161,7 @@ export const token = {
     // Derived from Gemx.png (dominant hue 157.7°) via scripts/derive-atmo.mjs
     atmo: { base: '#07110f', fog: '#b7d8ca', glow: '#60c49b', smoke: '#1f493d', light: { position: [1.12, 0.04], radius: 0.94, stretch: 1.3, intensity: 1.42 } },
     shaderType: 'flow-field',
-    coverImage: '/assets/projects/Gemx.png',
+    coverImage: '/assets/projects/Gemx.webp',
     // Case-study content is DUMMY placeholder copy — replace with real text when available.
     caseStudy: {
       layout: 'brand',
@@ -287,7 +287,7 @@ float glint = facetSparkle(vFacetId, uTilt);`,
     // Derived from DCJ.png (dominant hue 20.7°) via scripts/derive-atmo.mjs
     atmo: { base: '#160b08', fog: '#efd1ad', glow: '#ed9446', smoke: '#6a2e1d', light: { position: [1.27, 0.16], radius: 1.08, stretch: 1.0, intensity: 1.72 } },
     shaderType: 'growth',
-    coverImage: '/assets/projects/DCJ.png',
+    coverImage: '/assets/projects/DCJ.webp',
     // Case-study content is DUMMY placeholder copy — replace with real text when available.
     caseStudy: {
       layout: 'campaign',

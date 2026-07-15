@@ -4,7 +4,7 @@
 import Nav from '../components/Nav.astro';
 import WorkEntry from '../components/WorkEntry.astro';
 import WorkEntrySmall from '../components/WorkEntrySmall.astro';
-import { ALL_PROJECTS } from '../data/projects.js';
+import { ALL_PROJECTS, ORBIT_PROJECTS } from '../data/projects.js';
 import '../styles/global.css';
 import '../styles/home.css';
 import '../styles/work.css';
@@ -23,6 +23,10 @@ const minorProjects = ALL_PROJECTS.filter(p => !p.hasCaseStudy);
   <title>Aniket Bamotra — UX Engineer & Creative Technologist</title>
   <meta name="description" content="UX Engineer and Creative Technologist. Design × Engineering." />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <!-- Fetched by the hero before any JS runs: first cover texture + cube layout.
+       Without these hints they'd wait for the whole Three.js bundle to parse. -->
+  <link rel="preload" as="image" href={ORBIT_PROJECTS[0].coverImage} />
+  <link rel="preload" as="fetch" href="/assets/cube_positions.json" crossorigin="anonymous" />
 </head>
 <body>
   <!-- Curtain overlay for page transitions -->

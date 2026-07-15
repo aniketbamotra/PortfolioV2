@@ -689,7 +689,7 @@
       ],
       "rotationX": -1.5216
     },
-    "normalMap": "/assets/textures/floor-normal.png",
+    "normalMap": "/assets/textures/floor-normal.webp",
     "renderOrder": -1,
     "transparent": true,
     "depthWrite": false,
@@ -1137,7 +1137,7 @@
         "glow": "#e8913f",
         "smoke": "#b25325"
       },
-      "coverImage": "/assets/projects/keploy.png",
+      "coverImage": "/assets/projects/keploy.webp",
       "lightingPresetIndex": 0,
       "paletteSource": "hand-tuned reference 2026-07-03 (derive-atmo.mjs reproduces it within a few degrees)"
     },
@@ -1152,7 +1152,7 @@
         "glow": "#40e788",
         "smoke": "#2ea87b"
       },
-      "coverImage": "/assets/projects/Gemx.png",
+      "coverImage": "/assets/projects/Gemx.webp",
       "lightingPresetIndex": 1,
       "paletteSource": "derived from Gemx.png (dominant hue 157.7°) via scripts/derive-atmo.mjs"
     },
@@ -1167,7 +1167,7 @@
         "glow": "#e79140",
         "smoke": "#a8582e"
       },
-      "coverImage": "/assets/projects/DCJ.png",
+      "coverImage": "/assets/projects/DCJ.webp",
       "lightingPresetIndex": 2,
       "paletteSource": "derived from DCJ.png (dominant hue 20.7°) via scripts/derive-atmo.mjs"
     }
@@ -1179,14 +1179,14 @@
   "assets": {
     "skyEnvExr": "/assets/sky_env.exr",
     "cubePositions": "/assets/cube_positions.json",
-    "floorNormalMap": "/assets/textures/floor-normal.png",
+    "floorNormalMap": "/assets/textures/floor-normal.webp",
     "cloudTextures": [
       "/assets/clouds/cloudA.png",
       "/assets/clouds/cloudB.png",
       "/assets/clouds/cloudC.png"
     ],
     "coverImages": [
-      "/assets/projects/keploy.png"
+      "/assets/projects/keploy.webp"
     ]
   },
   "sceneGuiMapping": {

@@ -240,7 +240,7 @@ export function initReflectiveFloor({ scene, accent, renderer, medium } = {}) {
   // Tiling normal map → the metal's surface grain. Loaded async; assigned on arrival.
   // Normal maps are linear data, so NoColorSpace (NOT sRGB) is required for correct distortion.
   let _normalTex = null;
-  new THREE.TextureLoader().load('/assets/textures/floor-normal.png', (tex) => {
+  new THREE.TextureLoader().load('/assets/textures/floor-normal.webp', (tex) => {
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     tex.colorSpace = THREE.NoColorSpace;
     tex.anisotropy = renderer?.capabilities.getMaxAnisotropy?.() || 1;
