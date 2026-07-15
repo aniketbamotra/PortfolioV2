@@ -22,6 +22,7 @@ const BANK_FRAG = /* glsl */`
   uniform float uBankScale, uBankSpeed, uBankDensity, uBankLightGain;
   uniform float uBankFloor, uBankTop, uBankTopFeather;
   uniform float uBoil, uEdgeAmp, uEdgeScale, uEdgeSpeed;
+  uniform float uBotFeather, uBotAmp;
   uniform vec2  uPExtent, uSeed;
   varying vec2 vUv;
   ${NOISE_GLSL}
@@ -53,7 +54,12 @@ const BANK_FRAG = /* glsl */`
     // (forming, not blowing sideways). Kills the straight rectangle edge.
     float crest = FBM(vec2(p.x * uEdgeScale, uTime * uEdgeSpeed) + uSeed);
     float topEdge = uBankTop + (crest - 0.5) * uEdgeAmp;
-    float vertical = smoothstep(0.0, 0.14, vUv.y)
+    // Bottom edge gets the same treatment (own seed/phase): the fade depth varies per
+    // column and breathes over time, so fog fingers reach down over the floor and the
+    // floor contact never reads as a straight line.
+    float bfield = FBM(vec2(p.x * uEdgeScale * 1.4, uTime * uEdgeSpeed * 0.7) + uSeed * 1.7 + 9.2);
+    float botEnd = max(uBotFeather + (bfield - 0.5) * uBotAmp, 0.02);
+    float vertical = smoothstep(0.0, botEnd, vUv.y)
                    * (1.0 - smoothstep(topEdge - uBankTopFeather, topEdge, vUv.y));
     vec2 lightP = vec2(p.x * 0.52, p.y);
     float light = lightKernel(lightP, uGlowPos, uGlowRadius, uGlowStretch);
@@ -110,13 +116,12 @@ export function initFogVeil({ medium, isMobile = false } = {}) {
     uEdgeAmp: 0.19,         // skyline lumpiness (plane-uv) — 0 = straight edge
     uEdgeScale: 0.55,       // crest frequency along x — higher = more, smaller crests
     uEdgeSpeed: 0.255,      // how fast crests swell and sink
+    uBotFeather: 0.22,      // bottom fade depth (plane-uv) — was a fixed 0.14
+    uBotAmp: 0.18,          // bottom raggedness — fog fingers over the floor contact
     uPExtent: new THREE.Vector2(18 * P_PER_WORLD_X, FRONT_H * P_PER_WORLD_Y),
     uSeed: new THREE.Vector2(11.7, 3.1),
   });
   const frontGeo = makeBankGeometry(18, FRONT_H);
-  const front = new THREE.Mesh(frontGeo, material);
-  front.renderOrder = -0.5; // after floor and rear bank, before the voxel wall
-  front.frustumCulled = false;
 
   // Rear bank — broader, dimmer masses ~1.2 behind the front bank. Its own seed decorrelates
   // the two fields; stacked alpha is what finally occludes the dome, and the slight depth
@@ -131,22 +136,40 @@ export function initFogVeil({ medium, isMobile = false } = {}) {
     uEdgeAmp: 0.37,         // big lazy rear crests behind the front bank's faster ones
     uEdgeScale: 0.5,
     uEdgeSpeed: 0.135,
+    uBotFeather: 0.18,      // rear plane is taller — same world-depth fade as the front
+    uBotAmp: 0.14,
     uPExtent: new THREE.Vector2(26 * P_PER_WORLD_X, REAR_H * P_PER_WORLD_Y),
     uSeed: new THREE.Vector2(37.2, 17.9),
   });
   const rearGeo = makeBankGeometry(26, REAR_H);
-  const rear = new THREE.Mesh(rearGeo, materialRear);
-  rear.position.z = -1.2;   // local: further from the camera than the front bank
-  rear.renderOrder = -0.6;  // farther plane draws first for correct alpha stacking
-  rear.frustumCulled = false;
 
-  // One group = one seat: _seatFogPlanes positions/rotates this as a unit per wall.
-  const mesh = new THREE.Group();
-  mesh.add(rear, front);
-  mesh.position.set(0, 0.12, -1.15); // behind the active wall at z=0
+  // FIVE seated bank groups — active wall ± 2 ring slots, assigned by slot mod 5 (the
+  // projector pool's pattern). Five, not three, because the bank planes are wide enough
+  // that the ±1 neighbours' edges are VISIBLE in-frame at rest: with a 3-pool, every
+  // turn had to drop a visible seat (an on-screen pop). With ±2 coverage the seat that
+  // gets recycled is 160° away — always off-screen — so turn-start re-seating is
+  // invisible. All groups SHARE the two materials and geometries: one GUI/palette edit
+  // drives every seat, the shader count stays at two, and each plane is 4 vertices so
+  // the extra seats are free.
+  const makeGroup = () => {
+    const rear = new THREE.Mesh(rearGeo, materialRear);
+    rear.position.z = -1.2;   // local: further from the camera than the front bank
+    rear.renderOrder = -0.6;  // farther plane draws first for correct alpha stacking
+    rear.frustumCulled = false;
+    const front = new THREE.Mesh(frontGeo, material);
+    front.renderOrder = -0.5; // after floor and rear bank, before the voxel wall
+    front.frustumCulled = false;
+    const g = new THREE.Group();
+    g.add(rear, front);
+    g.position.set(0, 0.12, -1.15); // behind its wall's face
+    return g;
+  };
+  const meshes = Array.from({ length: 5 }, makeGroup);
 
   return {
-    mesh, material, materialRear,
+    meshes,
+    mesh: meshes[0], // the active-wall seat (kept for existing call sites)
+    material, materialRear,
     update() {},
     destroy() {
       frontGeo.dispose(); rearGeo.dispose();

@@ -58,6 +58,8 @@ const ATMO_FRAG = /* glsl */`
   uniform vec3  uHotColor;
   uniform vec2  uPocketPos;
   uniform float uPocketRadius, uPocketStretch, uPocketIntensity;
+  uniform vec2  uCardSmokePos;
+  uniform float uCardSmokeRadius, uCardSmokeStretch, uCardSmokeAmt;
   uniform float uSwirl, uSwirlScale, uSwirlSpeed;
   uniform float uGlowIntensity, uGlowEnergyGain, uGlowRadius, uGlowStretch, uGlowMouseShift;
   uniform vec2  uGlowPos;
@@ -167,11 +169,21 @@ const ATMO_FRAG = /* glsl */`
     // and pans correctly with the camera. Modulated by layer 1 so the lid keeps plume
     // structure instead of a flat gradient. (p.y + 0.5 ≈ the old screen-y at rest camera.)
     float lid = smoothstep(uLidStart, 1.0, p.y + 0.5) * uLidDensity * (0.45 + 0.75 * l1);
+    // Card smoke — a view-compensated DENSITY kernel (the backlight pocket's sibling, but
+    // adding cloud mass instead of light). The world's clouds are world-anchored by design,
+    // so which plumes sit near the card is luck-of-the-azimuth: project 0's tuned window
+    // had a rich mass hugging the card's left that the other slots lacked. This kernel
+    // pins a guaranteed plume beside/behind whichever card the camera faces (it follows
+    // the view like the light kernels), while the rest of the weather still sweeps past
+    // on turns. Modulated by the animated layers so it billows with plume structure
+    // instead of reading as a static gaussian blob.
+    float cardSmoke = wrapKernel(p, uCardSmokePos + view, uCardSmokeRadius, uCardSmokeStretch, uPeriod);
     float d = l1 * uL1Alpha
             + l2 * uL2Alpha * mix(1.0, l1 * 2.0, uL1Mix2)
             + l3 * uL3Alpha * (0.6 + uEnergy * uEnergyGain)
             + ink * uInkFog
-            + lid;
+            + lid
+            + cardSmoke * uCardSmokeAmt * (0.35 + 0.65 * l1 + 0.45 * l3);
     d = pow(clamp(d, 0.0, 1.0), uDensityGamma);
 
     // ── Absorption / scattering assembly — darkness falls out of the math ──
@@ -264,6 +276,13 @@ export function initAtmosphere({ medium, isMobile = false } = {}) {
       uPocketRadius:    { value: 0.81 },
       uPocketStretch:   { value: 0.65 }, // wider than tall — matches the card's footprint
       uPocketIntensity: { value: 0.46 },
+      // card smoke — guaranteed plume beside/behind the active card at every ring azimuth
+      // (view-compensated density kernel; see fragment). Biased to the card's left, where
+      // project 0's tuned composition had its richest world-cloud mass.
+      uCardSmokePos:     { value: new THREE.Vector2(-0.45, -0.05) },
+      uCardSmokeRadius:  { value: 0.55 },
+      uCardSmokeStretch: { value: 0.9 },
+      uCardSmokeAmt:     { value: 0.55 },
       // curl-noise eddies — local circulation of the cloud field (desktop only)
       uSwirl:      { value: 0.135 }, // displacement amplitude (p-units) along the curl
       uSwirlScale: { value: 1.6 },   // eddy frequency — HIGHER = smaller swirl circles

@@ -5,9 +5,10 @@
 // Exports: initSceneGui({ scene, renderer, bloomEffect, floor }) → { destroy }
 
 import GUI from 'lil-gui';
+import * as THREE from 'three';
 import { BlendFunction } from 'postprocessing';
 
-export function initSceneGui({ scene, renderer, bloomEffect, floor, projector, camera, camParams, fx, fluid, sky, atmosphere, sideLight, atmoParams, ambient, medium, fogVeil }) {
+export function initSceneGui({ scene, renderer, bloomEffect, floor, projector, camera, camParams, fx, fluid, sky, atmosphere, sideLight, atmoParams, ambient, medium, fogVeil, fogArc }) {
   const gui = new GUI({ title: 'Scene' });
 
   // A pmndrs Effect is toggled on/off by swapping its blend function to SKIP (fully bypassed)
@@ -19,6 +20,42 @@ export function initSceneGui({ scene, renderer, bloomEffect, floor, projector, c
     const proxy = { enabled: current !== BlendFunction.SKIP };
     folder.add(proxy, 'enabled').name(label).onChange((on) => {
       effect.blendMode.blendFunction = on ? original : BlendFunction.SKIP;
+    });
+  }
+
+  // ── Debug: colored wireframe outlines on every fog/floor mesh, so "which mesh is that?"
+  // can be answered by color. Built lazily on first enable; outlines are children of their
+  // meshes, so they follow seating/turn transforms automatically. Legend:
+  //   green = FRONT fog bank (×3 seats) · blue = REAR fog bank (×3 seats)
+  //   magenta = fog arc (foreground horseshoe) · yellow = reflective floor rim
+  {
+    const dbg = gui.addFolder('Debug');
+    dbg.close();
+    const outlines = [];
+    let built = false;
+    const outline = (mesh, color) => {
+      const line = new THREE.LineSegments(
+        new THREE.EdgesGeometry(mesh.geometry),
+        new THREE.LineBasicMaterial({ color, depthTest: false, depthWrite: false }),
+      );
+      line.renderOrder = 100;
+      mesh.add(line);
+      outlines.push(line);
+    };
+    const build = () => {
+      (fogVeil?.meshes || []).forEach((g) => {
+        const [rear, front] = g.children;
+        if (rear) outline(rear, 0x0088ff);
+        if (front) outline(front, 0x00ff88);
+      });
+      if (fogArc?.mesh) outline(fogArc.mesh, 0xff00ff);
+      if (floor?.mesh) outline(floor.mesh, 0xffcc00);
+      console.log('[debug] fog mesh bounds — green: front bank ×3, blue: rear bank ×3, magenta: fog arc, yellow: floor rim');
+    };
+    const proxy = { bounds: false };
+    dbg.add(proxy, 'bounds').name('show fog mesh bounds').onChange((on) => {
+      if (on && !built) { build(); built = true; }
+      outlines.forEach((l) => { l.visible = on; });
     });
   }
 
@@ -53,6 +90,9 @@ export function initSceneGui({ scene, renderer, bloomEffect, floor, projector, c
     fl.add(u.uMistOuter, 'value', 4, 20, 0.1).name('mist outer (x)');
     fl.add(u.uMistFloor, 'value', 0, 1, 0.01).name('mist floor (min)');
     fl.add(u.uMistLeftBoost, 'value', 0.5, 3, 0.05).name('mist left boost');
+    fl.add(u.uHazeAmt, 'value', 0, 1, 0.01).name('contact haze');
+    fl.add(u.uHazeStart, 'value', -1, 3, 0.05).name('haze start (behind card)');
+    fl.add(u.uHazeEnd, 'value', 0.5, 6, 0.05).name('haze end (full)');
     const proxy = { base: '#' + u.color.value.getHexString() };
     fl.addColor(proxy, 'base').name('base color').onChange((v) => u.color.value.set(v));
   }
@@ -138,6 +178,11 @@ export function initSceneGui({ scene, renderer, bloomEffect, floor, projector, c
     at.addColor(hotProxy, 'hot').name('hot color').onChange((v) => u.uHotColor.value.set(v));
     at.add(u.uLidDensity, 'value', 0, 1.5, 0.01).name('ceiling lid density');
     at.add(u.uLidStart, 'value', 0, 1, 0.01).name('ceiling lid start');
+    at.add(u.uCardSmokeAmt, 'value', 0, 2, 0.01).name('card smoke amount');
+    at.add(u.uCardSmokeRadius, 'value', 0.1, 1.5, 0.01).name('card smoke radius');
+    at.add(u.uCardSmokeStretch, 'value', 0.2, 3, 0.05).name('card smoke stretch');
+    at.add(u.uCardSmokePos.value, 'x', -1.5, 1.5, 0.01).name('card smoke x');
+    at.add(u.uCardSmokePos.value, 'y', -1, 1, 0.01).name('card smoke y');
     at.add(u.uPocketIntensity, 'value', 0, 2, 0.01).name('card pocket intensity');
     at.add(u.uPocketRadius, 'value', 0.1, 1.5, 0.01).name('card pocket radius');
     at.add(u.uPocketStretch, 'value', 0.2, 3, 0.05).name('card pocket stretch');
@@ -153,7 +198,10 @@ export function initSceneGui({ scene, renderer, bloomEffect, floor, projector, c
     const u = fogVeil.material.uniforms;
     const fv = gui.addFolder('Fog bank');
     fv.close();
-    fv.add(fogVeil.mesh, 'visible').name('visible');
+    const veilProxy = { visible: true };
+    fv.add(veilProxy, 'visible').name('visible').onChange((v) => {
+      (fogVeil.meshes || [fogVeil.mesh]).forEach((m) => { m.visible = v; });
+    });
     fv.add(u.uBankDensity, 'value', 0, 1, 0.01).name('density');
     fv.add(u.uBankFloor, 'value', 0, 1, 0.01).name('thickness floor');
     fv.add(u.uBankTop, 'value', 0.2, 1, 0.01).name('height (top edge)');
@@ -165,6 +213,8 @@ export function initSceneGui({ scene, renderer, bloomEffect, floor, projector, c
     fv.add(u.uEdgeAmp, 'value', 0, 0.5, 0.01).name('edge lumpiness');
     fv.add(u.uEdgeScale, 'value', 0.2, 4, 0.05).name('edge crest scale');
     fv.add(u.uEdgeSpeed, 'value', 0, 0.3, 0.005).name('edge swell speed');
+    fv.add(u.uBotFeather, 'value', 0.02, 0.5, 0.01).name('bottom feather');
+    fv.add(u.uBotAmp, 'value', 0, 0.4, 0.01).name('bottom raggedness');
     if (fogVeil.materialRear) {
       const ur = fogVeil.materialRear.uniforms;
       fv.add(ur.uBankDensity, 'value', 0, 1, 0.01).name('rear density');
@@ -177,7 +227,35 @@ export function initSceneGui({ scene, renderer, bloomEffect, floor, projector, c
       fv.add(ur.uEdgeAmp, 'value', 0, 0.5, 0.01).name('rear edge lumpiness');
       fv.add(ur.uEdgeScale, 'value', 0.2, 4, 0.05).name('rear edge crest scale');
       fv.add(ur.uEdgeSpeed, 'value', 0, 0.3, 0.005).name('rear edge swell speed');
+      fv.add(ur.uBotFeather, 'value', 0.02, 0.5, 0.01).name('rear bottom feather');
+      fv.add(ur.uBotAmp, 'value', 0, 0.4, 0.01).name('rear bottom raggedness');
     }
+  }
+
+  // ── Fog arc (foreground proscenium horseshoe) ──
+  if (fogArc?.material) {
+    const u = fogArc.material.uniforms;
+    const fa = gui.addFolder('Fog arc');
+    fa.close();
+    fa.add(fogArc.mesh, 'visible').name('visible');
+    fa.add(u.uArcDensity, 'value', 0, 1.5, 0.01).name('density');
+    fa.add(u.uArcFloor, 'value', 0, 1, 0.01).name('thickness floor');
+    fa.add(u.uArcScale, 'value', 0.1, 2, 0.01).name('scale');
+    fa.add(u.uArcSpeed, 'value', 0, 0.3, 0.005).name('speed');
+    fa.add(u.uBoil, 'value', 0, 0.3, 0.001).name('boil (forming)');
+    fa.add(u.uLightGain, 'value', 0, 1.5, 0.01).name('light gain');
+    fa.add(u.uWinPos.value, 'x', -2, 2, 0.01).name('window x');
+    fa.add(u.uWinPos.value, 'y', -1.5, 2, 0.01).name('window y');
+    fa.add(u.uWinRadii.value, 'x', 0.5, 4.5, 0.01).name('window radius x');
+    fa.add(u.uWinRadii.value, 'y', 0.3, 3, 0.01).name('window radius y');
+    fa.add(u.uWinFeather, 'value', 0.05, 1.5, 0.01).name('window feather');
+    fa.add(u.uTopOpen, 'value', 0, 1, 0.01).name('window top open (0=open)');
+    fa.add(u.uBreakAmp, 'value', 0, 1.5, 0.01).name('edge break amp');
+    fa.add(u.uBreakScale, 'value', 0.2, 3, 0.05).name('edge break scale');
+    fa.add(u.uBreakSpeed, 'value', 0, 0.2, 0.002).name('edge break speed');
+    fa.add(u.uTopStart, 'value', -1.8, 1.8, 0.01).name('arm top start');
+    fa.add(u.uTopFeather, 'value', 0.05, 2, 0.01).name('arm top feather');
+    fa.add(u.uTopLump, 'value', 0, 1.5, 0.01).name('arm top lumpiness');
   }
 
   if (projector?.light) {

@@ -46,6 +46,10 @@ const FLOOR_FRAG = /* glsl */`
   uniform float     uWaveAmp, uWaveScale, uWaveSpeed;   // live micro-waves on the mirror
   uniform float     uMistAmt, uMistInner, uMistOuter;   // ground mist flanking the card
   uniform float     uMistFloor, uMistLeftBoost;         // min density / dark-side equalizer
+  uniform vec2      uWallN;                             // active wall face normal (xz, toward camera)
+  uniform float     uWallD;                             // plane offset: dot(slotPos.xz, uWallN)
+  uniform float     uWallT;                             // lateral offset: dot(slotPos.xz, perp(uWallN))
+  uniform float     uHazeAmt, uHazeStart, uHazeEnd;     // fog-bank contact haze band
   varying vec4 vUv;
   varying vec2 vLocal;
   varying vec2 vMeshUv;
@@ -114,21 +118,40 @@ const FLOOR_FRAG = /* glsl */`
     fogF = clamp(fogF * mix(0.7, 1.3, fs), 0.0, 1.0);
     col = mix(col, uBase * 0.5, fogF);
 
+    // Active-wall frame on the floor plane: dFront = distance in FRONT of the wall face
+    // (toward the camera seat), lx = lateral offset along the wall. Both re-anchored per
+    // ring slot via setWallFrame — everything authored in these coords follows the card
+    // to every project instead of staying parked at slot 0's world position.
+    float dFront = dot(vWorld.xz, uWallN) - uWallD;
+    float lx = dot(vWorld.xz, vec2(uWallN.y, -uWallN.x)) - uWallT;
+
     // Rolling ground mist flanking the card (the flanks read empty otherwise) — bands
     // left+right of the card mass, colored by the medium's fog so it belongs to the same
     // weather as the sky. The noise BOILS in place (own slow clock, decoupled from wind
     // advection) and rides on a minimum-density floor, so a bank thins but never vanishes
     // when a low pocket of the field passes through. Left bank gets a small gain — equal
-    // density reads dimmer on the frame's dark side.
-    float mx = abs(vWorld.x);
+    // density reads dimmer on the frame's dark side. Authored in the WALL frame (was
+    // world-x/z, which stranded the mist at project 0's seat after a ring turn).
+    float mx = abs(lx);
     float bankX = smoothstep(uMistInner, uMistInner + 1.5, mx)
                 * (1.0 - smoothstep(uMistOuter, uMistOuter + 5.0, mx));
-    float bankZ = 1.0 - smoothstep(4.0, 10.0, abs(vWorld.z - 2.0));
+    float bankZ = 1.0 - smoothstep(4.0, 10.0, abs(dFront - 2.0));
     float mn = noise(vWorld.xz * 0.28 + vec2(uTime * 0.03, -uTime * 0.02));
-    float side = mix(uMistLeftBoost, 1.0, step(0.0, vWorld.x));
+    float side = mix(uMistLeftBoost, 1.0, step(0.0, lx));
     float mist = bankX * bankZ * (uMistFloor + (1.0 - uMistFloor) * smoothstep(0.35, 0.85, mn))
                * uMistAmt * side;
     col = mix(col, uFogCol * 0.22, clamp(mist, 0.0, 1.0));
+
+    // Contact haze — the mirror mists over toward the fog bank's footprint, so bank and
+    // floor meet in shared haze instead of a hard seam. Banded BEHIND the active wall
+    // face only (dFront < 0): the foreground strip carrying the card's reflection stays
+    // a clean mirror. The band breathes with a slow noise so the contact line never
+    // reads straight; it swallows whatever the mirror showed there (mostly the bank's
+    // own reflection), matching how wet ground goes matte under a fog wall.
+    float haze = smoothstep(uHazeStart, uHazeEnd, -dFront);
+    float hn = noise(vWorld.xz * 0.5 + vec2(uTime * 0.02, -uTime * 0.015));
+    haze = clamp(haze * (0.75 + 0.5 * hn), 0.0, 1.0);
+    col = mix(col, uFogCol * 0.3, haze * uHazeAmt);
 
     float r = length(vLocal) / uRadius;                   // 0 centre → 1 edge
     float alpha = 1.0 - smoothstep(0.5, 0.95, r);         // trim the disc edge (color does the rest)
@@ -200,6 +223,14 @@ export function initReflectiveFloor({ scene, accent, renderer, medium } = {}) {
         uMistOuter: { value: 10.0 },
         uMistFloor:     { value: 0.17 }, // min bank density — thins, never vanishes
         uMistLeftBoost: { value: 0.5 },  // dark-side sits QUIETER than the lit side now
+        // fog-bank contact haze — wall frame re-fed by setWallFrame() on every re-seat;
+        // defaults = rest slot 0 (face at the origin, normal +z toward the camera)
+        uWallN:     { value: new THREE.Vector2(0, 1) },
+        uWallD:     { value: 0 },
+        uWallT:     { value: 0 },
+        uHazeAmt:   { value: 0.85 },  // how matte the mirror goes inside the band
+        uHazeStart: { value: 0.4 },   // world units behind the wall face where haze begins
+        uHazeEnd:   { value: 2.2 },   // fully hazed here (bank line sits at 1.15)
       },
       vertexShader: FLOOR_VERT,
       fragmentShader: FLOOR_FRAG,
@@ -254,6 +285,14 @@ export function initReflectiveFloor({ scene, accent, renderer, medium } = {}) {
     mesh: floor,
     update() {},                 // surface is static — motion comes from the reflected sky
     setColor() {},               // fixed dark-gray base (see note above)
+    // Re-anchor the contact-haze band to the active wall (called from _seatFogPlanes):
+    // normal = wall face normal (toward the camera seat), slotPos = wall face position.
+    setWallFrame(normal, slotPos) {
+      const u = floor.material.uniforms;
+      u.uWallN.value.set(normal.x, normal.z);
+      u.uWallD.value = slotPos.x * normal.x + slotPos.z * normal.z;
+      u.uWallT.value = slotPos.x * normal.z - slotPos.z * normal.x; // dot(slot, perp(N))
+    },
     setInk(uniform) { floor.material.uniforms.uInk = uniform; }, // adopt the live { value } dye object
     destroy() { floor.dispose(); geometry.dispose(); flatNormal.dispose(); flatInk.dispose(); _normalTex?.dispose(); scene.remove(floor); },
   };

@@ -23,6 +23,7 @@ import { initProjector } from './spot-projector.js';
 import { initAtmosphere, DEFAULT_ATMO } from './atmosphere.js';
 import { initAtmosphereMedium } from './atmosphere-medium.js';
 import { initFogVeil } from './fog-veil.js';
+import { initFogArc, ARC_DIST, ARC_Y } from './fog-arc.js';
 import { initSideLight } from './side-light.js';
 import gsap from 'gsap';
 
@@ -66,6 +67,7 @@ let _projector = null;   // cursor-driven spotlight projecting the cover image o
 let _medium    = null;   // shared atmospheric medium — colors/light/wind/clocks, one transition()
 let _atmo      = null;   // world-space sky dome (absorption/scattering cloudscape)
 let _veil      = null;   // foreground fog veil — haze over card/floor, seats everything
+let _arc       = null;   // foreground fog arc — camera-azimuth-anchored proscenium horseshoe
 let _sideLight = null;   // real PointLight keying the card to the atmosphere's glow region
 let _ambient   = null;   // AmbientLight — off by default (tuned 2026-07-02); GUI can re-enable
 
@@ -103,6 +105,8 @@ const _qI = new THREE.Quaternion();
 // Scratch for placing a wall's (scene-child) projector in world space each frame.
 const _pjPos = new THREE.Vector3(), _pjN = new THREE.Vector3(), _pjR = new THREE.Vector3(), _pjU = new THREE.Vector3();
 const _slPos = new THREE.Vector3(); // scratch: side-light world anchor (active wall's frame)
+const _wallSlotTmp = new THREE.Vector3(); // scratch: wall face position for the floor's haze band
+const _arcDir = new THREE.Vector3(); // scratch: camera-forward direction for the fog arc
 const PROJ_DIST = 3.25, PROJ_TRAVEL = 1.0; // lamp stand-off from the face · cursor travel range
 // (cursor-torch scratch removed — using _hit / _cursor directly)
 
@@ -374,9 +378,30 @@ export function initScene(canvas) {
   _atmo = initAtmosphere({ medium: _medium, isMobile });
   scene.add(_atmo.mesh);
 
-  // Foreground fog veil — haze over everything; seats the card, fogs the floor junction.
+  // Mid-ground fog banks — a fixed pool of 3 seated groups (active wall + both ring
+  // neighbours, mirroring the 3-projector pool) so the outgoing card keeps its bank
+  // during a turn. All three share the same two materials.
   _veil = initFogVeil({ medium: _medium, isMobile });
-  scene.add(_veil.mesh);
+  for (const m of _veil.meshes) scene.add(m);
+
+  // Foreground fog arc — proscenium horseshoe in front of the card: occludes the bank/floor
+  // seam at the flanks, clears over the card + its reflection. Follows the camera's ring
+  // azimuth (placed per frame in _tick), so it never jumps or vanishes during a turn.
+  _arc = initFogArc({ medium: _medium, isMobile });
+  scene.add(_arc.mesh);
+  _placeArc();
+  // Keep the arc OUT of the floor's mirror render: reflecting lens-side fog would
+  // double-fog the flanks the arc is meant to occlude. (reflective-floor already wraps
+  // onBeforeRender once to strip scene.fog; this wraps that wrapper.)
+  {
+    const _mirrorPass = _floor.mesh.onBeforeRender;
+    _floor.mesh.onBeforeRender = function (r, s, c) {
+      const arcVis = _arc ? _arc.mesh.visible : false;
+      if (_arc) _arc.mesh.visible = false;
+      _mirrorPass.call(this, r, s, c);
+      if (_arc) _arc.mesh.visible = arcVis;
+    };
+  }
 
   // Real side light matching the glow — rims the card so it agrees with the bright edge.
   _sideLight = initSideLight({ scene });
@@ -427,7 +452,7 @@ export function initScene(canvas) {
         fx: { godRays: _godRays, godRaySource: _godRaySrc, tiltShift: _tiltShift, fluidDistortion: _fluidFx, noise: noiseEffect, vignette: vignetteEffect, afterimage: _afterimage, grade: _grade },
         fluid: _fluid, sky: _sky,
         atmosphere: _atmo, sideLight: _sideLight, atmoParams: _atmoParams, ambient: _ambient,
-        medium: _medium, fogVeil: _veil,
+        medium: _medium, fogVeil: _veil, fogArc: _arc,
       });
     });
   }
@@ -573,6 +598,7 @@ export function initScene(canvas) {
     // Sky is world geometry (the dome) — camera motion moves it through the projection,
     // no manual parallax. update() only refreshes the screen-resolution uniform (ink).
     if (_atmo) { _atmo.setViewYaw(_camAzimuth); _atmo.update(); }
+    _placeArc();
     if (_veil) _veil.update();
     if (_sideLight) { _placeSideLight(); _sideLight.update(prefersReduced ? 0 : _energy); }
     // (projectors are placed per visible wall in the tilt loop above — no single-lamp update)
@@ -749,15 +775,44 @@ function _placeProjector(wall, withCursor) {
 // not per frame: at rest they're world-anchored (parallax like everything else), during a
 // turn the old seat sweeps out of frame with its wall, and the new seat is behind the
 // incoming wall — never a screen-glued fog layer.
+// Seat the fog arc at the camera's CURRENT ring azimuth (continuous, mid-turn included):
+// a fixed forward distance from the seat, always facing it. Called every frame from _tick —
+// the arc pans with the view instead of jumping between wall seats, so project turns keep
+// an unbroken foreground. (Deliberate exception to "fog planes seat per wall"; see fog-arc.js.)
+function _placeArc() {
+  if (!_arc) return;
+  _ringSlot(_camAzimuth, _arcDir);
+  _arcDir.sub(CAM_PIVOT).normalize();
+  _arc.mesh.position.copy(CAM_PIVOT).addScaledVector(_arcDir, ARC_DIST);
+  _arc.mesh.position.y += ARC_Y;
+  _arc.mesh.rotation.y = _camAzimuth;
+}
+
 function _seatFogPlanes(wall) {
   if (!wall) return;
   const th = wall.theta;
   _slPos.set(Math.sin(th), 0, Math.cos(th)); // wall face normal (toward the camera seat)
+  // Re-anchor the floor's fog-bank contact haze to this wall's frame, so the matte band
+  // stays glued behind the active card at every ring azimuth.
+  if (_floor?.setWallFrame) {
+    _ringSlot(th, _wallSlotTmp);
+    _floor.setWallFrame(_slPos, _wallSlotTmp);
+  }
   if (_veil) {
-    _ringSlot(th, _veil.mesh.position);
-    _veil.mesh.position.addScaledVector(_slPos, -1.15);
-    _veil.mesh.position.y += 0.12;
-    _veil.mesh.rotation.y = th;
+    // Seat the 5-bank pool over slots wall±2, each mesh keyed by slot mod 5 (projector
+    // pattern). A slot that stays in the neighbourhood keeps ITS mesh at an identical
+    // transform — zero motion — so re-seating at turn start is invisible: the only mesh
+    // that moves is the one recycled from the slot 2 turns behind (160° away, off-screen).
+    // Same authored offsets as ever: 1.15 behind the face along its normal, y +0.12.
+    for (let s = wall.slotIndex - 2; s <= wall.slotIndex + 2; s++) {
+      const m = _veil.meshes[((s % 5) + 5) % 5];
+      const t = s * RING_STEP;
+      _ringSlot(t, m.position);
+      m.position.x -= Math.sin(t) * 1.15;
+      m.position.z -= Math.cos(t) * 1.15;
+      m.position.y += 0.12;
+      m.rotation.y = t;
+    }
   }
   if (_mistFront) {
     _ringSlot(th, _mistFront.mesh.position);
@@ -1516,6 +1571,8 @@ export function destroy() {
   _atmo = null;
   _veil?.destroy();
   _veil = null;
+  _arc?.destroy();
+  _arc = null;
   _medium?.destroy();
   _medium = null;
   _sideLight?.destroy();
