@@ -10,7 +10,6 @@ import { Fluid } from '@alienkitty/alien.js/src/three/utils/Fluid.js';
 import { FluidDistortionEffect } from './fluid-distortion-effect.js';
 import { AfterimagePass } from './afterimage-pass.js';
 import { GradeEffect } from './grade-effect.js';
-import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { ORBIT_PROJECTS } from '../data/projects.js';
 import { initEnvironment } from './environment.js';
@@ -27,18 +26,17 @@ import { initFogArc, ARC_DIST, ARC_Y } from './fog-arc.js';
 import { initSideLight } from './side-light.js';
 import gsap from 'gsap';
 
-// Sky source: 'exr' = sky_env.exr (72 MB, static) · 'dome' = procedural animated dome (no asset).
-const SKY_MODE = 'dome';
 // The screen-space atmosphere (atmosphere.js) replaced the dome as the visible backdrop and
 // the god rays / mist-front as the light-and-haze story. Modules stay in the repo, gated here.
+// (The old sky_env.exr IBL path and the cloud-layer still planes were removed 2026-07-15 —
+// environmentIntensity had been 0 since the projector became the only card light.)
 const USE_SKY_DOME   = false;
 const ENABLE_GODRAYS = false;
 const USE_MIST_FRONT = false;
-import { initCloudLayer } from './cloud-layer.js';
 
 // The scene is built imperatively once (initScene runs on page load). Vite HMR hot-swaps this
 // module without re-running it, so edits wouldn't show. Force a full reload on any update to
-// this module or its deps (cloud-layer, etc.) so the scene always rebuilds fresh. Dev-only.
+// this module or its deps so the scene always rebuilds fresh. Dev-only.
 if (import.meta.hot) import.meta.hot.accept(() => window.location.reload());
 
 // ── Module state ──────────────────────────────────────────────────────────────
@@ -47,7 +45,6 @@ let renderer, composer, scene, camera, rafId, bloomEffect;
 let cardGroup  = null;   // holds the voxel field; gets float + mouse tilt
 let voxelMesh  = null;   // THREE.InstancedMesh — the card itself
 let _env       = null;   // hero atmosphere (ground / haze / clouds / glow) — disabled this pass
-let _cloud     = null;   // composition-validation cloud layer (3 still planes)
 let _gui       = null;   // dev-only scene/env controls (lazy, dev/?lights only)
 let _sky       = null;   // procedural sky dome (SKY_MODE === 'dome')
 let _floor     = null;   // reflective floor below the card
@@ -225,12 +222,18 @@ export function initScene(canvas) {
 
   renderer = new THREE.WebGLRenderer({
     canvas,
-    antialias:             true,
-    preserveDrawingBuffer: true,
+    // antialias off: every frame is composed through the EffectComposer's render targets,
+    // so canvas MSAA never touches visible pixels — it only cost memory/bandwidth.
+    antialias:             false,
+    // preserveDrawingBuffer off: nothing reads the canvas back (no toDataURL anywhere),
+    // and keeping the backbuffer forces an extra copy per frame.
+    preserveDrawingBuffer: false,
     powerPreference:       'high-performance',
   });
   isMobile = window.innerWidth < 768;
-  renderer.setPixelRatio(Math.min(devicePixelRatio, isMobile ? 1.5 : 2));
+  // 1.5 caps pixel work at 56% of DPR-2 (perf pass 2026-07-15: the frame is fill-bound —
+  // fog FBM + card + dome all scale with pixels). Tunable live via the GUI's render scale.
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
   renderer.toneMapping         = THREE.ACESFilmicToneMapping;
   // Scene materials render into the composer's RT (no tone mapping applied there), so this
   // only affects shaders that opt in via tonemapping includes — in practice, the floor.
@@ -246,40 +249,16 @@ export function initScene(canvas) {
   scene.backgroundIntensity  = 0.5;
   scene.environmentIntensity = 0; // IBL off (tuned look: the projector is the only card light)
 
-  if (SKY_MODE === 'exr') {
-    // Environment map (IBL) from the sky EXR — image-based lighting + visible sky.
-    // PMREM prefilters it for roughness-correct reflections.
+  // The screen-space atmosphere (added below) is the visible backdrop. No environment map:
+  // environmentIntensity is 0 (the projector is the only card light), so IBL would be inert.
+  scene.background = null;
+
+  if (USE_SKY_DOME) {
     const _pmrem = new THREE.PMREMGenerator(renderer);
-    _pmrem.compileEquirectangularShader();
-    new EXRLoader().load('/assets/sky_env.exr', (tex) => {
-      tex.mapping = THREE.EquirectangularReflectionMapping;
-      const envRT = _pmrem.fromEquirectangular(tex);
-      scene.environment = envRT.texture;
-      scene.background = envRT.texture; // sky visible behind the scene
-      tex.dispose();
-      _pmrem.dispose();
-    });
-  } else {
-    // The screen-space atmosphere (added below) is the visible backdrop; the card is *lit* by
-    // the real sky EXR (IBL only — nothing visible). The dome path is kept behind USE_SKY_DOME.
-    scene.background = null;
-
-    const _pmrem = new THREE.PMREMGenerator(renderer);
-    _pmrem.compileEquirectangularShader();
-
-    if (USE_SKY_DOME) {
-      _sky = initSkyDome({ accent: _accentFor(0), renderer });
-      scene.add(_sky.mesh);
-      scene.environment = _pmrem.fromScene(scene, 0.04).texture; // placeholder IBL from the dome
-    }
-
-    new EXRLoader().load('/assets/sky_env.exr', (tex) => {
-      tex.mapping = THREE.EquirectangularReflectionMapping;
-      const envRT = _pmrem.fromEquirectangular(tex);
-      scene.environment = envRT.texture; // EXR drives lighting; the backdrop stays procedural
-      tex.dispose();
-      _pmrem.dispose();
-    });
+    _sky = initSkyDome({ accent: _accentFor(0), renderer });
+    scene.add(_sky.mesh);
+    scene.environment = _pmrem.fromScene(scene, 0.04).texture; // placeholder IBL from the dome
+    _pmrem.dispose();
   }
 
   camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 2000);
@@ -361,10 +340,6 @@ export function initScene(canvas) {
   // Hero atmosphere around the card (reflective ground, haze, ceiling clouds, glow).
   // Disabled for the cloud composition-validation pass — re-enable later.
   // _env = initEnvironment({ scene, renderer, camera, isMobile, accent: _accentFor(0) });
-
-  // Cloud layer — 3 still planes above/behind the card (validation pass).
-  // Disabled for now — cloudA/B/C textures off; the procedural dome carries the sky.
-  // _cloud = initCloudLayer({ scene, camera, isMobile, accent: _accentFor(0) });
 
   // Shared atmospheric medium — every layer below adopts its uniform objects by reference;
   // one _medium.transition() recolors backdrop + veil + floor fog + card tint together.
@@ -589,7 +564,6 @@ export function initScene(canvas) {
     const _wt = prefersReduced ? 0 : t;
     for (const w of _pool.values()) if (w.cubeU) w.cubeU.uTime.value = _wt;
     if (_env) _env.update(prefersReduced ? 0 : t);
-    if (_cloud) _cloud.update(prefersReduced ? 0 : t);
     if (_sky) _sky.update(prefersReduced ? 0 : t);
     if (_floor) _floor.update(prefersReduced ? 0 : t);
     if (_mistFront) _mistFront.update(prefersReduced ? 0 : t);
@@ -1541,8 +1515,6 @@ export function destroy() {
   cancelAnimationFrame(rafId);
   _env?.destroy();
   _env = null;
-  _cloud?.destroy();
-  _cloud = null;
   _gui?.destroy();
   _gui = null;
   _sky?.destroy();

@@ -283,6 +283,14 @@ export function initSceneGui({ scene, renderer, bloomEffect, floor, projector, c
     }
   }
   if (renderer) post.add(renderer, 'toneMappingExposure', 0, 3, 0.01).name('exposure');
+  if (renderer) {
+    // Render scale = pixel ratio cap (perf pass 2026-07-15: frame is fill-bound; 1.5 ships).
+    // The resize event re-runs three-scene's handler, which resizes renderer + composer.
+    const rs = { scale: renderer.getPixelRatio() };
+    post.add(rs, 'scale', 0.75, Math.min(window.devicePixelRatio, 2), 0.05)
+      .name('render scale (px ratio)')
+      .onChange((v) => { renderer.setPixelRatio(v); window.dispatchEvent(new Event('resize')); });
+  }
   if (fx?.grade) {
     const g = fx.grade;
     addEffectToggle(post, g, 'grade enabled');

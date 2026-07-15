@@ -35,18 +35,7 @@ const BANK_FRAG = /* glsl */`
   void main(){
     vec2 p = (vUv - 0.5) * uPExtent;
     float t = uTime * uBankSpeed;
-    // Form clock — evolves the WARP offsets (not the sample position), so fog masses
-    // morph/condense/dissolve in place instead of translating. Same anti-"sliding
-    // texture" trick as the dome's ev clock.
     float ev = uTime * uBoil;
-    vec2 flow = p + uWind * uTime * 1.6 + uSeed;
-    vec2 warp = vec2(FBM(flow * uBankScale + vec2(t, ev)),
-                     FBM(flow * uBankScale + vec2(4.6, 1.2) - t - vec2(0.0, ev * 0.7)));
-    float density = FBM(flow * uBankScale + warp * 1.5 + vec2(t * 0.4, ev * 0.3));
-    density = smoothstep(0.23, 0.93, density);
-    // Thickness floor — low pockets of the field THIN the bank but never open a hole
-    // (same trick as the ground mist's uMistFloor), so the wall of fog stays continuous.
-    density = uBankFloor + (1.0 - uBankFloor) * density;
     float horizontal = smoothstep(0.0, 0.16, vUv.x) * smoothstep(0.0, 0.16, 1.0 - vUv.x);
     // Bottom feather is fixed; the TOP edge is authored: the bank dissolves into the sky
     // across uBankTopFeather ending at a LUMPY skyline — uBankTop is modulated per-column
@@ -61,6 +50,21 @@ const BANK_FRAG = /* glsl */`
     float botEnd = max(uBotFeather + (bfield - 0.5) * uBotAmp, 0.02);
     float vertical = smoothstep(0.0, botEnd, vUv.y)
                    * (1.0 - smoothstep(topEdge - uBankTopFeather, topEdge, vUv.y));
+    // Perf: the plane oversizes the bank (sky above the skyline, side feathers), and the
+    // fades above make alpha EXACTLY 0 there. Skip the 3 body-FBM calls for those pixels —
+    // output is bit-identical, and the dead zone is a large share of the frame.
+    if (vertical * horizontal <= 0.0) { discard; }
+    // Form clock — evolves the WARP offsets (not the sample position), so fog masses
+    // morph/condense/dissolve in place instead of translating. Same anti-"sliding
+    // texture" trick as the dome's ev clock.
+    vec2 flow = p + uWind * uTime * 1.6 + uSeed;
+    vec2 warp = vec2(FBM(flow * uBankScale + vec2(t, ev)),
+                     FBM(flow * uBankScale + vec2(4.6, 1.2) - t - vec2(0.0, ev * 0.7)));
+    float density = FBM(flow * uBankScale + warp * 1.5 + vec2(t * 0.4, ev * 0.3));
+    density = smoothstep(0.23, 0.93, density);
+    // Thickness floor — low pockets of the field THIN the bank but never open a hole
+    // (same trick as the ground mist's uMistFloor), so the wall of fog stays continuous.
+    density = uBankFloor + (1.0 - uBankFloor) * density;
     vec2 lightP = vec2(p.x * 0.52, p.y);
     float light = lightKernel(lightP, uGlowPos, uGlowRadius, uGlowStretch);
     float alpha = density * horizontal * vertical * uBankDensity * mix(0.55, 1.0, light);

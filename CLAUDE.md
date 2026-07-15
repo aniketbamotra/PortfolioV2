@@ -40,7 +40,7 @@ src/data/projects.js  content model (see "Data model")
 src/data/scene-settings.json  scene tuning reference
 src/scripts/          all JS — one responsibility per file (see "Module reference")
 src/scripts/shaders/noise-glsl.js  shared GLSL noise/FBM (NOISE_GLSL)
-public/assets/        cube_positions.json, projects/ covers, sky_env.exr (72MB, unused path)
+public/assets/        cube_positions.json, projects/ covers (webp), textures/ (floor normal)
 scripts/              check-asset-case.mjs (prebuild), derive-atmo.mjs (cover → atmo palette)
 brainstron/           reference dumps (reference_vals.md, ref-skyDome.ms, Group (1).glb)
 agent.md  design.md   rules + design docs
@@ -191,12 +191,11 @@ initScene(canvas)   setProject(idx)   setPaused(paused)   destroy()
 | `mist-front.js` | gated off (`USE_MIST_FRONT=false`) | foreground haze plane |
 | `sky-dome.js` | gated off (`USE_SKY_DOME=false`) | old procedural backdrop |
 | `environment.js` | disabled | old 4-layer env (pre-atmosphere) |
-| `cloud-layer.js` | disabled | composition-validation still planes |
 | `three-orbit.js` | **legacy** | old orbit scene; BottomBar still imports `prevProject/nextProject` |
 | `light-gui.js` | dev-only, legacy-ish | old light GUI |
 | `audio.js`, `work-reveals.js` | Phase-2 stubs | Howler ambient / ScrollTrigger reveals — don't implement unprompted |
 
-Feature gates at the top of `three-scene.js`: `SKY_MODE='dome'`, `USE_SKY_DOME=false`,
+Feature gates at the top of `three-scene.js`: `USE_SKY_DOME=false`,
 `ENABLE_GODRAYS=false`, `USE_MIST_FRONT=false`.
 
 ## Data model (`src/data/projects.js`)

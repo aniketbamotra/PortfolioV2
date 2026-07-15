@@ -48,7 +48,7 @@
       "z": 0
     },
     "environmentMap": {
-      "exrPath": "/assets/sky_env.exr",
+      "exrPath": "sky_env.exr (asset removed 2026-07-15 — IBL was inert at environmentIntensity 0)",
       "mapping": "EquirectangularReflectionMapping",
       "pmremSceneNear": 0.04
     }
@@ -1028,7 +1028,7 @@
     "mobileOpacityScale": 0.7,
     "planes": [
       {
-        "tex": "/assets/clouds/cloudA.png",
+        "tex": "clouds/cloudA.png (asset removed 2026-07-15 with cloud-layer.js)",
         "size": 48,
         "position": [
           -1,
@@ -1047,7 +1047,7 @@
         "renderOrder": -8
       },
       {
-        "tex": "/assets/clouds/cloudB.png",
+        "tex": "clouds/cloudB.png (asset removed 2026-07-15 with cloud-layer.js)",
         "size": 62,
         "position": [
           1,
@@ -1066,7 +1066,7 @@
         "renderOrder": -9
       },
       {
-        "tex": "/assets/clouds/cloudC.png",
+        "tex": "clouds/cloudC.png (asset removed 2026-07-15 with cloud-layer.js)",
         "size": 78,
         "position": [
           -2,
@@ -1177,14 +1177,10 @@
     "note": "Samples the cover image's dominant hue cluster (15° bins, chroma-weighted, greys/extremes excluded) and emits the four palette roles as literals: base fixed #111111; smoke = hsl(hue, .57, .42); glow = hue nudged ≤12° toward 45° warm anchor at hsl(·, .78, .58) — never white; fog = warm cream (35°) taking a 25% project tint at hsl(·, .55, .85). Calibrated so keploy.png reproduces the hand-tuned project-0 palette."
   },
   "assets": {
-    "skyEnvExr": "/assets/sky_env.exr",
+    "skyEnvExr": "removed 2026-07-15 (IBL was inert at environmentIntensity 0)",
     "cubePositions": "/assets/cube_positions.json",
     "floorNormalMap": "/assets/textures/floor-normal.webp",
-    "cloudTextures": [
-      "/assets/clouds/cloudA.png",
-      "/assets/clouds/cloudB.png",
-      "/assets/clouds/cloudC.png"
-    ],
+    "cloudTextures": "removed 2026-07-15 with cloud-layer.js (disabled validation planes)",
     "coverImages": [
       "/assets/projects/keploy.webp"
     ]

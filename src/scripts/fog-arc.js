@@ -53,18 +53,6 @@ const ARC_FRAG = /* glsl */`
   void main(){
     vec2 local = (vUv - 0.5) * uPlaneSize; // plane-local world units, origin at plane centre
 
-    // Body density — bank-family field: domain warp advected by the shared wind, morphed
-    // in place by the boil clock (shapes condense/dissolve rather than translate).
-    float t = uTime * uArcSpeed;
-    float ev = uTime * uBoil;
-    vec2 flow = local + uWind * uTime * 2.2 + vec2(23.1, 7.4);
-    vec2 warp = vec2(FBM(flow * uArcScale + vec2(t, ev)),
-                     FBM(flow * uArcScale + vec2(4.6, 1.2) - t - vec2(0.0, ev * 0.7)));
-    float density = FBM(flow * uArcScale + warp * 1.5 + vec2(t * 0.4, ev * 0.3));
-    density = smoothstep(0.2, 0.9, density);
-    // Thickness floor — the horseshoe arms thin but never open a hole.
-    density = uArcFloor + (1.0 - uArcFloor) * density;
-
     // Clear window over the card + its reflection. The edge is eroded by a POSITION-space
     // noise field with time as its own axis (no angular seam, no static coastline): the
     // effective window radius breathes per-direction, so the boundary reads as weather,
@@ -89,7 +77,25 @@ const ARC_FRAG = /* glsl */`
     float edge = smoothstep(0.0, 0.06, vUv.x) * smoothstep(0.0, 0.06, 1.0 - vUv.x)
                * smoothstep(0.0, 0.1, vUv.y);
 
-    float alpha = density * win * topFade * edge * uArcDensity;
+    // Perf: the window over the card and the sky above the arms have mask EXACTLY 0 —
+    // skip the 3 body-FBM calls there (that clear zone is most of the frame's centre).
+    // Output is bit-identical to computing density and multiplying by 0.
+    float mask = win * topFade * edge;
+    if (mask <= 0.0) { discard; }
+
+    // Body density — bank-family field: domain warp advected by the shared wind, morphed
+    // in place by the boil clock (shapes condense/dissolve rather than translate).
+    float t = uTime * uArcSpeed;
+    float ev = uTime * uBoil;
+    vec2 flow = local + uWind * uTime * 2.2 + vec2(23.1, 7.4);
+    vec2 warp = vec2(FBM(flow * uArcScale + vec2(t, ev)),
+                     FBM(flow * uArcScale + vec2(4.6, 1.2) - t - vec2(0.0, ev * 0.7)));
+    float density = FBM(flow * uArcScale + warp * 1.5 + vec2(t * 0.4, ev * 0.3));
+    density = smoothstep(0.2, 0.9, density);
+    // Thickness floor — the horseshoe arms thin but never open a hole.
+    density = uArcFloor + (1.0 - uArcFloor) * density;
+
+    float alpha = density * mask * uArcDensity;
 
     // Same lighting assembly as the banks — shared kernel, shared palette — so the arc
     // and the bank read as one continuous fog mass where they overlap at the flanks.
